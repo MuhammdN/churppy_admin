@@ -20,7 +20,7 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: master
+        - pattern: main
           include: true
           source: true
 
@@ -31,27 +31,29 @@ workflows:
           flutter pub get
 
       - name: Clean build
-        script: |
-          flutter clean || true
+        script: flutter clean || true
 
-      - name: Build iOS manually signed IPA
+      - name: Archive & export signed IPA
         script: |
-          echo "🚀 Building IPA with Manual Code Signing..."
-          flutter build ipa --release \
-            --export-method app-store \
-            --bundle-sksl-path sksl.json
-
+          echo "🚀 Archiving & Exporting IPA for TestFlight..."
           cd ios
-          xcodebuild -workspace Runner.xcworkspace \
+          xcodebuild clean archive \
+            -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
+            -archivePath ../build/Runner.xcarchive \
             DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
             PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
-            PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID \
-            archive -archivePath ../build/Runner.xcarchive
+            PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID
+
+          xcodebuild -exportArchive \
+            -archivePath ../build/Runner.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath ../build/ios/ipa
           cd ..
+          ls -la build/ios/ipa
 
     artifacts:
       - build/ios/ipa/*.ipa
