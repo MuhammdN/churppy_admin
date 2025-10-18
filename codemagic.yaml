@@ -12,45 +12,46 @@ workflows:
         PROVISIONING_PROFILE_SPECIFIER: "ChurppyAdminProvisioningORG"
       groups:
         - ios_signing_credentials
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - $FCI_BUILD_DIR/build
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: master
+          include: true
+          source: true
 
     scripts:
-      - name: Fetch signing files
-        script: |
-          echo "🔑 Installing signing certificates and provisioning profiles..."
-          keychain initialize
-          app-store-connect fetch-signing-files "$IOS_BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-          keychain add-certificates
-          xcode-project use-profiles
-
-      - name: Flutter setup
+      - name: Flutter version & deps
         script: |
           flutter --version
           flutter pub get
-          flutter build ios --release --no-codesign
 
-      - name: Archive and Export
+      - name: Clean build
         script: |
-          echo "🚀 Archiving & exporting IPA..."
+          flutter clean || true
+
+      - name: Build iOS manually signed IPA
+        script: |
+          echo "🚀 Building IPA with Manual Code Signing..."
+          flutter build ipa --release \
+            --export-method app-store \
+            --bundle-sksl-path sksl.json
+
           cd ios
-          xcodebuild clean archive \
-            -workspace Runner.xcworkspace \
+          xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
-            -archivePath ../build/Runner.xcarchive \
             DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
             PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
-            PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID
-
-          xcodebuild -exportArchive \
-            -archivePath ../build/Runner.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath ../build/ios/ipa
+            PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID \
+            archive -archivePath ../build/Runner.xcarchive
           cd ..
-          ls -la build/ios/ipa
 
     artifacts:
       - build/ios/ipa/*.ipa
