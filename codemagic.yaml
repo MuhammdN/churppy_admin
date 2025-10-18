@@ -7,7 +7,7 @@ workflows:
       xcode: latest
       vars:
         IOS_BUNDLE_ID: "com.admin.churppyAdmin"
-        DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM
+        DEVELOPMENT_TEAM: "7H4229UD7R" # Directly set here
       groups:
         - ios_signing_credentials
     cache:
@@ -21,17 +21,36 @@ workflows:
         - pattern: master
           include: true
           source: true
+
     scripts:
       - name: Flutter version & deps
         script: |
           flutter --version
           flutter pub get
+
       - name: Clean previous builds
         script: |
           flutter clean || true
+
+      - name: Force auto-signing before build
+        script: |
+          echo "🧩 Forcing Automatic Code Signing..."
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM \
+            CODE_SIGN_STYLE=Automatic \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            clean build
+          cd ..
+
       - name: Build IPA with auto-signing
         script: |
+          echo "🚀 Building signed IPA..."
           flutter build ipa --release --export-method app-store
+
     artifacts:
       - build/ios/ipa/*.ipa
 
