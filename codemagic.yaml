@@ -1,0 +1,36 @@
+workflows:
+  android-release:
+    name: Android Release (APK & AAB)
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      vars:
+        ANDROID_PACKAGE_NAME: "com.example.churppy_admin"   # <- apna package name
+      groups:
+        - keystore_credentials                    # optional: agar sign karna ho to
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - $FCI_BUILD_DIR/build
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: master
+          include: true
+          source: true
+    scripts:
+      - name: Flutter version & deps
+        script: |
+          flutter --version
+          flutter pub get
+      - name: Build APK (release)
+        script: |
+          flutter build apk --release
+      - name: Build AAB (release)
+        script: |
+          flutter build appbundle --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
