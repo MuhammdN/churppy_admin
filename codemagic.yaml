@@ -20,28 +20,43 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: master
+        - pattern: main     # ✅ updated to main branch
           include: true
           source: true
 
     scripts:
-      - name: Flutter version & deps
+      - name: Flutter version & dependencies
         script: |
           flutter --version
           flutter pub get
 
-      - name: Clean build
+      - name: Clean previous builds
         script: |
           flutter clean || true
 
-      - name: Build iOS manually signed IPA
+      - name: Install uploaded signing files
         script: |
-          echo "🚀 Building IPA with Manual Code Signing..."
-          flutter build ipa --release \
-            --export-method app-store \
-            --bundle-sksl-path sksl.json
+          echo "🔑 Installing uploaded .p12 and .mobileprovision profiles..."
+          keychain initialize
+          keychain add-certificates
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          find /Users/builder/Library/codemagic-cli-tools/provisioning_profiles -name "*.mobileprovision" -exec cp {} "$PROFILES_DIR/" \;
+          echo "✅ Installed provisioning profiles:"
+          ls "$PROFILES_DIR"
 
+      - name: Build iOS (no codesign yet)
+        script: |
+          echo "🧩 Preparing Flutter iOS build (no signing yet)..."
+          flutter build ios --release --no-codesign
+
+      - name: Archive & export signed IPA
+        script: |
+          echo "🚀 Archiving and signing IPA manually..."
           cd ios
+          rm -rf ios_backup || true  # clean any backup Xcodeproj if present
+
+          # ✅ Archive the build
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -51,6 +66,13 @@ workflows:
             PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
             PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID \
             archive -archivePath ../build/Runner.xcarchive
+
+          # ✅ Export IPA
+          xcodebuild -exportArchive \
+            -archivePath ../build/Runner.xcarchive \
+            -exportOptionsPlist ../ios/ExportOptions.plist \
+            -exportPath ../build/ios/ipa
+
           cd ..
 
     artifacts:
