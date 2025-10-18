@@ -12,30 +12,27 @@ workflows:
         PROVISIONING_PROFILE_SPECIFIER: "ChurppyAdminProvisioningORG"
       groups:
         - ios_signing_credentials
-    cache:
-      cache_paths:
-        - ~/.pub-cache
-        - $FCI_BUILD_DIR/build
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-          source: true
 
     scripts:
-      - name: Flutter version & deps
+      - name: Fetch signing files
+        script: |
+          echo "🔑 Installing signing certificates and provisioning profiles..."
+          keychain initialize
+          app-store-connect fetch-signing-files "$IOS_BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Flutter setup
         script: |
           flutter --version
           flutter pub get
+          flutter build ios --release --no-codesign
 
-      - name: Clean build
-        script: flutter clean || true
-
-      - name: Archive & export signed IPA
+      - name: Archive and Export
         script: |
-          echo "🚀 Archiving & Exporting IPA for TestFlight..."
+          echo "🚀 Archiving & exporting IPA..."
           cd ios
           xcodebuild clean archive \
             -workspace Runner.xcworkspace \
