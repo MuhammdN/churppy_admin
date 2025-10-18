@@ -1,14 +1,14 @@
 workflows:
-  android-release:
-    name: Android Release (APK & AAB)
+  ios-release:
+    name: iOS Release (IPA & TestFlight)
     max_build_duration: 60
     environment:
       flutter: stable
       xcode: latest
       vars:
-        ANDROID_PACKAGE_NAME: "com.example.churppy_admin"   # <- apna package name
+        IOS_BUNDLE_ID: "com.admin.churppyAdmin"
       groups:
-        - keystore_credentials                    # optional: agar sign karna ho to
+        - ios_signing_credentials
     cache:
       cache_paths:
         - ~/.pub-cache
@@ -25,12 +25,17 @@ workflows:
         script: |
           flutter --version
           flutter pub get
-      - name: Build APK (release)
+      - name: Clean previous builds
         script: |
-          flutter build apk --release
-      - name: Build AAB (release)
+          flutter clean || true
+      - name: Build IPA with auto-signing
         script: |
-          flutter build appbundle --release
+          flutter build ipa --release --export-method app-store
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
-      - build/app/outputs/bundle/release/app-release.aab
+      - build/ios/ipa/*.ipa
+
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
