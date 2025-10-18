@@ -74,6 +74,10 @@ workflows:
             -exportPath ../build/ios/ipa
 
           cd ..
+      - name: Verify exported IPA
+        script: |
+          echo "🕵️ Checking for exported IPA..."
+          find build/ios/ipa -name "*.ipa"
 
     artifacts:
       - build/ios/ipa/*.ipa
