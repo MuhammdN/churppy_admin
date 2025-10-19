@@ -13,12 +13,20 @@ workflows:
       - name: Clean Pods and reinstall
         script: |
           cd ios
-          rm -rf Pods Podfile.lock
+          rm -rf Pods
+          rm -rf Podfile.lock
+          rm -rf Target\ Support\ Files
           pod deintegrate
-          pod install --repo-update
           cd ..
 
-      - name: Fetch signing files (automatic)
+      - name: Reinstall CocoaPods and generate workspace
+        script: |
+          cd ios
+          pod repo update
+          pod install
+          cd ..
+
+      - name: Fetch signing files
         script: |
           app-store-connect fetch-signing-files "com.admin.churppyAdmin" \
           --platform IOS \
@@ -28,18 +36,21 @@ workflows:
       - name: Add signing certificate to keychain
         script: keychain add-certificates
 
-      - name: Apply provisioning profiles automatically
+      - name: Apply profiles to Xcode project
         script: |
           xcode-project use-profiles --project "ios/Runner.xcodeproj"
 
-      # ✅ Automatic signing build (recommended)
-      - name: Build IPA (Automatic Signing)
+      # ✅ Manual code signing flags (explicit)
+      - name: Build IPA (Manual Signing)
         script: |
           xcode-project build-ipa \
             --workspace "ios/Runner.xcworkspace" \
             --scheme "Runner" \
-            --allowProvisioningUpdates \
-            --archive-xcargs "DEVELOPMENT_TEAM=7H4229UD7R CODE_SIGN_STYLE=Automatic"
+            --archive-xcargs "COMPILER_INDEX_STORE_ENABLE=NO DEVELOPMENT_TEAM=7H4229UD7R CODE_SIGN_IDENTITY='Apple Distribution' CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='Churppy Admin ios_app_store 1760891473'"
+
+
+
+
 
     artifacts:
       - build/ios/ipa/*.ipa
