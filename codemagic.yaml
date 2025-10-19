@@ -29,17 +29,16 @@ workflows:
       - name: Add signing certificate to keychain
         script: keychain add-certificates
 
-      - name: Apply provisioning profiles to Xcode project
+      - name: Apply provisioning profiles to project
         script: xcode-project use-profiles
 
-      # ✅ Let Codemagic/Xcode handle signing automatically
-      - name: Build signed IPA
+      - name: Build signed IPA (auto-sign via Codemagic)
         script: |
           xcode-project build-ipa \
             --workspace "ios/Runner.xcworkspace" \
             --scheme "Runner" \
-            --automatic-signing \
-            --team-id 7H4229UD7R
+            --archive-flags "CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=7H4229UD7R" \
+            --export-options-plist "ios/exportOptions.plist"
 
     artifacts:
       - build/ios/ipa/*.ipa
