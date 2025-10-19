@@ -7,7 +7,7 @@ workflows:
         - ios_signing_credentials
 
     scripts:
-      - name: Set up keychain for code signing
+      - name: Initialize secure keychain
         script: keychain initialize
 
       - name: Clean Pods and reinstall
@@ -26,6 +26,7 @@ workflows:
           pod install
           cd ..
 
+      # Fetch signing files ensures your uploaded cert/profile are attached
       - name: Fetch signing files
         script: |
           app-store-connect fetch-signing-files "com.admin.churppyAdmin" \
@@ -36,21 +37,17 @@ workflows:
       - name: Add signing certificate to keychain
         script: keychain add-certificates
 
-      - name: Apply profiles to Xcode project
-        script: |
-          xcode-project use-profiles --project "ios/Runner.xcodeproj"
+      - name: Apply provisioning profiles automatically
+        script: xcode-project use-profiles
 
-      # ✅ Manual code signing flags (explicit)
-      - name: Build IPA (Manual Signing)
+      # ✅ Build IPA (auto uses Codemagic’s global cert/profile)
+      - name: Build signed IPA
         script: |
           xcode-project build-ipa \
             --workspace "ios/Runner.xcworkspace" \
             --scheme "Runner" \
-            --archive-xcargs "COMPILER_INDEX_STORE_ENABLE=NO DEVELOPMENT_TEAM=7H4229UD7R CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER='Churppy Admin ios_app_store 1760891473'"
-
-
-
-
+            --automatic-signing \
+            --team-id 7H4229UD7R
 
     artifacts:
       - build/ios/ipa/*.ipa
