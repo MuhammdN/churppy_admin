@@ -10,7 +10,7 @@ workflows:
       - name: Initialize keychain
         script: keychain initialize
 
-      - name: Clean and reinstall CocoaPods
+      - name: Clean Pods and reinstall
         script: |
           cd ios
           rm -rf Pods Podfile.lock
@@ -29,15 +29,17 @@ workflows:
       - name: Add signing certificate to keychain
         script: keychain add-certificates
 
-      - name: Apply provisioning profiles
+      - name: Apply provisioning profiles to Xcode project
         script: xcode-project use-profiles
 
-      # ✅ Automatic global signing (no manual flags)
+      # ✅ Let Codemagic/Xcode handle signing automatically
       - name: Build signed IPA
         script: |
           xcode-project build-ipa \
             --workspace "ios/Runner.xcworkspace" \
-            --scheme "Runner"
+            --scheme "Runner" \
+            --automatic-signing \
+            --team-id 7H4229UD7R
 
     artifacts:
       - build/ios/ipa/*.ipa
