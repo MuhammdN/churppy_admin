@@ -1,17 +1,14 @@
 workflows:
   ios-release:
     name: iOS Release
-    max_build_duration: 60
     environment:
       groups:
         - ios_signing_credentials
 
     scripts:
-      # 🔑 Step 1: Initialize keychain
       - name: Initialize keychain
         script: keychain initialize
 
-      # 🧹 Step 2: Clean & reinstall Pods
       - name: Clean Pods and reinstall
         script: |
           cd ios
@@ -21,24 +18,20 @@ workflows:
           pod install
           cd ..
 
-      # 🔏 Step 3: Add Codemagic certificates globally (automatic signing)
-      - name: Add global signing certificates
-        script: keychain add-certificates
-
-      # 🏗️ Step 4: Build signed IPA automatically
-      - name: Build signed IPA
+      - name: Fetch signing files via API
         script: |
-          xcode-project build-ipa \
+          app-store-connect fetch-signing-files "com.admin.churppyAdmin" \
+          --platform IOS \
+          --type IOS_APP_STORE \
+          --create
+
+      - name: Build signed IPA (automatic from API)
+        script: |
+          app-store-connect build-ipa \
+            --type IOS_APP_STORE \
+            --bundle-id "com.admin.churppyAdmin" \
             --workspace "ios/Runner.xcworkspace" \
-            --scheme "Runner" \
-            --archive-flags "CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=7H4229UD7R" \
-            --export-options-plist "ios/exportOptions.plist"
-
-      # 🧠 Step 5: Diagnostic (optional - shows signing info in logs)
-      - name: Show signing setup
-        script: |
-          echo "🔍 Checking active signing configuration..."
-          xcodebuild -showBuildSettings -workspace ios/Runner.xcworkspace -scheme Runner | grep -E "CODE_SIGN|DEVELOPMENT_TEAM"
+            --scheme "Runner"
 
     artifacts:
       - build/ios/ipa/*.ipa
@@ -50,4 +43,3 @@ workflows:
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
-        submit_to_app_store: false
