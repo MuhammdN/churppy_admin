@@ -32,13 +32,29 @@ workflows:
       - name: Apply provisioning profiles to project
         script: xcode-project use-profiles
 
-      - name: Build signed IPA (auto-sign via Codemagic)
+      - name: Build signed IPA (auto via fetched certs)
         script: |
-          xcode-project build-ipa \
-            --workspace "ios/Runner.xcworkspace" \
-            --scheme "Runner" \
-            --archive-flags "CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=7H4229UD7R" \
-            --export-options-plist "ios/exportOptions.plist"
+          echo "🔍 Listing available certs & profiles..."
+          ls -la /Users/builder/Library/MobileDevice/Certificates/
+          ls -la /Users/builder/Library/MobileDevice/Provisioning\ Profiles/
+
+          echo "🚀 Building and signing IPA using fetched Apple cert/profile..."
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -archivePath build/Runner.xcarchive archive \
+            DEVELOPMENT_TEAM=7H4229UD7R \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="Churppy Admin ios_app_store 1760917692" \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+          echo "📦 Exporting signed IPA..."
+          xcodebuild -exportArchive \
+            -archivePath build/Runner.xcarchive \
+            -exportOptionsPlist /Users/builder/export_options.plist \
+            -exportPath build/ios/ipa
+
+          echo "✅ Signed IPA ready at build/ios/ipa/"
 
     artifacts:
       - build/ios/ipa/*.ipa
