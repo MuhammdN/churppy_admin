@@ -12,12 +12,18 @@ workflows:
 
       - name: Clean Pods and reinstall
         script: |
+          flutter pub get
+          
+          # Fix Podfile typo
+          sed -i '' 's/generated_xcode_build2_settings_path/generated_xcode_build_settings_path/g' ios/Podfile
+
           cd ios
           rm -rf Pods Podfile.lock
           pod deintegrate
           pod repo update
           pod install
           cd ..
+
 
       - name: Fetch signing files
         script: |
