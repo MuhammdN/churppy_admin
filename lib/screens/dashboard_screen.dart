@@ -5,9 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import 'drawer.dart';
-
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -20,6 +18,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? userId;
 
   // 🔹 Dashboard Stats
+  int totalChurppyAlerts = 0;
   int totalDelivered = 0;
   int totalCustomers = 0;
   int orderReceived = 0;
@@ -30,51 +29,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadUserId();
-    _fetchDashboardData();
   }
 
+  /// ✅ Load user_id then fetch stats
   Future<void> _loadUserId() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUserId = prefs.getString("user_id");
+
+    debugPrint("✅ Logged-in User ID: $savedUserId");
 
     setState(() {
       userId = savedUserId;
     });
 
-    print("✅ Logged-in User ID: $savedUserId");
+    if (savedUserId != null) {
+      _fetchDashboardData(savedUserId);
+    }
   }
 
-  Future<void> _fetchDashboardData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUserId = prefs.getString("user_id");
-
-    if (savedUserId == null) {
-      print("⚠️ No user ID found in SharedPreferences");
-      return;
-    }
-
-    final url =
-        Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
+  /// ✅ Dashboard API call
+  Future<void> _fetchDashboardData(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
 
     try {
-      final response = await http.post(
-        url,
-        body: {
-          "user_id": savedUserId,
-        },
-      );
+      final response = await http.post(url, body: {"user_id": uid});
 
-      print("🔗 API URL: $url");
-      print("📤 Request Body: {user_id: $savedUserId}");
-      print("📥 Status Code: ${response.statusCode}");
-      print("📥 Raw Response: ${response.body}");
+      debugPrint("📥 Raw Response: ${response.body}");
 
       if (response.statusCode == 200) {
         final result = json.decode(response.body);
 
         if (result['status'] == 'success') {
           final data = result['data'];
+
           setState(() {
+            totalChurppyAlerts = data['total_churppy_alerts'] ?? 0;
             totalDelivered = data['total_delivered'] ?? 0;
             totalCustomers = data['total_customers'] ?? 0;
             orderReceived = data['order_received'] ?? 0;
@@ -88,8 +78,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
     } catch (e) {
+      debugPrint("⚠️ Error: $e");
       setState(() => isLoading = false);
-      print("⚠️ Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("⚠️ Error: $e")),
       );
@@ -235,20 +225,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                   const SizedBox(height: 14),
 
+                  /// Purple dashed divider
                   Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 35, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF8DC63F),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: Text(
-                        "NEXT - Send Alert",
-                        style: GoogleFonts.roboto(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final dashWidth = 9.0;
+                          final dashCount =
+                              (constraints.maxWidth / (2 * dashWidth)).floor();
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List.generate(dashCount, (_) {
+                              return Container(
+                                width: dashWidth,
+                                height: 3,
+                                color: Colors.purple,
+                              );
+                            }),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -265,7 +261,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               _statBox(
                                 icon: Icons.notifications,
                                 title: 'Total Churppy Alerts',
-                                count: totalDelivered.toString(),
+                                count: totalChurppyAlerts.toString(),
                                 color: const Color(0xFF8DC63F),
                               ),
                               const SizedBox(height: 10),
@@ -301,26 +297,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 8),
                         ElevatedButton(
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.transparent, // 🔹 Background remove
-    shadowColor: Colors.transparent,     // 🔹 Shadow remove
-    elevation: 0,                        // 🔹 Elevation 0
-  ),
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ContactUsScreen()),
-    );
-  },
-  child: Text(
-    "CONNECT WITH US",
-    style: GoogleFonts.roboto(
-      fontWeight: FontWeight.bold,
-      color: Colors.red, // 🔹 Text ka color same rakha
-    ),
-  ),
-),
-
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            elevation: 0,
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ContactUsScreen()),
+                            );
+                          },
+                          child: Text(
+                            "CONNECT WITH US",
+                            style: GoogleFonts.roboto(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

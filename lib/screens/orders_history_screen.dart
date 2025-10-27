@@ -13,7 +13,7 @@ class OrdersHistoryScreen extends StatefulWidget {
 }
 
 class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
-  int? _merchantId; // ✅ SharedPreferences se aane wala (merchant_id)
+  int? _merchantId;
   bool _isLoading = false;
   List<Map<String, dynamic>> _orders = [];
 
@@ -23,10 +23,11 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
     _loadMerchantIdAndFetchOrders();
   }
 
-  /// ✅ SharedPreferences se merchant_id fetch karke orders API call
+  /// ✅ SharedPreferences se merchant_id fetch karna
   Future<void> _loadMerchantIdAndFetchOrders() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedId = prefs.getString("user_id"); // actually merchant_id
+    final savedId = prefs.getString("user_id"); // merchant_id stored as user_id
+
     if (savedId != null) {
       setState(() {
         _merchantId = int.tryParse(savedId);
@@ -47,7 +48,8 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
 
     try {
       final url = Uri.parse(
-          "https://churppy.eurekawebsolutions.com/api/orders.php?user_id=$merchantId");
+          "https://churppy.eurekawebsolutions.com/api/orders.php?merchant_id=$merchantId");
+
       final response = await http.get(url);
 
       print("🔗 API URL: $url");
@@ -62,11 +64,11 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
           setState(() {
             _orders = orders.map<Map<String, dynamic>>((o) {
               return {
-                "order_number": o['order_number'] ?? "",
-                "date": o['order_date'] ?? "",
+                "order_number": o['order_number']?.toString() ?? "",
+                "date": o['order_date']?.toString() ?? "",
                 "amount": o['amount']?.toString() ?? "0",
-                "status": o['status'] ?? "",
-                "customer_id": o['customer_id']?.toString() ?? "", // ✅ DB se
+                "status": o['status']?.toString() ?? "",
+                "customer_id": o['customer_id']?.toString() ?? "",
               };
             }).toList();
           });
@@ -145,212 +147,208 @@ class _OrdersHistoryScreenState extends State<OrdersHistoryScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
-        children: [
-          // Back + Title
-          Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.grey.shade300,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        size: 20, color: Colors.black),
-                    onPressed: () => Navigator.pop(context),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  "Orders History",
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-
-          // Header Row
-          Container(
-            padding:
-            const EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              border:
-              Border(bottom: BorderSide(color: Colors.grey.shade300)),
-            ),
-            child: Row(
-              children: [
-                const Expanded(
-                    flex: 2,
-                    child: Text("Order No",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                const Expanded(
-                    flex: 2,
-                    child: Text("Date",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                const Expanded(
-                    flex: 2,
-                    child: Text("Amount",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                const Expanded(
-                    flex: 2,
-                    child: Text("Status",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                Expanded(
-                  flex: 1,
-                  child: InkWell(
-                    onTap: () {
-
-                    },
-                    child: const Text(
-                      "Detail",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                // Back + Title
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: Colors.grey.shade300,
+                        child: IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              size: 20, color: Colors.black),
+                          onPressed: () => Navigator.pop(context),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        "Orders History",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
 
-              ],
-            ),
-          ),
-
-          // Orders List
-          Expanded(
-            child: _orders.isEmpty
-                ? const Center(child: Text("No orders found"))
-                : ListView.builder(
-              itemCount: _orders.length,
-              padding: EdgeInsets.zero,
-              itemBuilder: (context, index) {
-                final order = _orders[index];
-                Color statusColor;
-                switch (order['status']) {
-                  case 'Pending':
-                    statusColor = Colors.green;
-                    break;
-                  case 'Delivered':
-                    statusColor = Colors.purple;
-                    break;
-                  case 'Cancel':
-                    statusColor = Colors.red;
-                    break;
-                  default:
-                    statusColor = Colors.grey;
-                }
-
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 9, horizontal: 5),
+                // Header Row
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 10, horizontal: 5),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: Colors.grey.shade200,
                     border: Border(
-                        bottom: BorderSide(
-                            color: Colors.grey.shade300)),
+                        bottom: BorderSide(color: Colors.grey.shade300)),
                   ),
                   child: Row(
                     children: [
-                      Expanded(
+                      const Expanded(
                           flex: 2,
-                          child:
-                          Text(order['order_number'] ?? "")),
-                      Expanded(
+                          child: Text("Order No",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12))),
+                      const Expanded(
                           flex: 2,
-                          child: Text(order['date'] ?? "")),
-                      Expanded(
+                          child: Text("Date",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12))),
+                     
+                      const Expanded(
                           flex: 2,
-                          child:
-                          Text("\$${order['amount']}")),
-
-                      // Status
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              borderRadius:
-                              BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              order['status'] ?? "",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // View Button
-                      Expanded(
+                          child: Text("Status",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12))),
+                      const Expanded(
                         flex: 1,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            final orderNumber =
-                            order['order_number'];
-                            final merchantId = _merchantId;
-                            final customerId =
-                            int.tryParse(order['customer_id'] ?? "0");
-
-                            if (orderNumber != null &&
-                                merchantId != null) {
-                              print("🟣 Merchant ID: $merchantId");
-                              print("🟣 Customer ID: $customerId");
-                              print("🟣 Order Number: $orderNumber");
-
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      OrderDetailScreen(
-                                        merchantId: merchantId,
-                                        customerId: customerId ?? 0,
-                                        orderNumber: orderNumber,
-                                      ),
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
-                            minimumSize: const Size(40, 30),
-                          ),
-                          child: const Text(
-                            "View",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
+                        child: Text(
+                          "Detail",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
                           ),
                         ),
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+
+                // Orders List
+                Expanded(
+                  child: _orders.isEmpty
+                      ? const Center(child: Text("No orders found"))
+                      : ListView.builder(
+                          itemCount: _orders.length,
+                          padding: EdgeInsets.zero,
+                          itemBuilder: (context, index) {
+                            final order = _orders[index];
+                            Color statusColor;
+                            switch (order['status']) {
+                              case 'Pending':
+                                statusColor = Colors.green;
+                                break;
+                              case 'Delivered':
+                                statusColor = Colors.purple;
+                                break;
+                              case 'Cancel':
+                                statusColor = Colors.red;
+                                break;
+                              default:
+                                statusColor = Colors.grey;
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 9, horizontal: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                border: Border(
+                                    bottom: BorderSide(
+                                        color: Colors.grey.shade300)),
+                              ),
+                              child: Row(
+                                children: [
+                                 Expanded(
+  flex: 2,
+  child: Text(
+    order['order_number'],
+    style: const TextStyle(
+      fontSize: 10,            // 👈 chota font
+      fontWeight: FontWeight.w600,
+      overflow: TextOverflow.ellipsis,
+    ),
+  ),
+),
+
+                                  Expanded(
+                                      flex: 2,
+                                      child: Text(order['date'])),
+                                
+
+                                  // Status
+                                  Expanded(
+                                    flex: 2,
+                                    child: Container(
+                                      alignment: Alignment.centerLeft,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: statusColor,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          order['status'],
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  // View Button
+                                  Expanded(
+                                    flex: 1,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        final orderNumber =
+                                            order['order_number'];
+                                        final merchantId = _merchantId;
+                                        final customerId =
+                                            int.tryParse(order['customer_id']);
+
+                                        if (orderNumber != null &&
+                                            merchantId != null) {
+                                          print("🟣 Merchant ID: $merchantId");
+                                          print("🟣 Customer ID: $customerId");
+                                          print(
+                                              "🟣 Order Number: $orderNumber");
+
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  OrderDetailScreen(
+                                                merchantId: merchantId,
+                                                customerId: customerId ?? 0,
+                                                orderNumber: orderNumber,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 6),
+                                        minimumSize: const Size(40, 30),
+                                      ),
+                                      child: const Text(
+                                        "View",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

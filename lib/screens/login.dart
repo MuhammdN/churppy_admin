@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:country_picker/country_picker.dart'; // ✅ new package
+
 import '../routes.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,20 +18,30 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordCtrl = TextEditingController();
   final TextEditingController phoneCtrl = TextEditingController();
 
-  String selectedCountryCode = '+1';
-  String selectedFlag = '🇺🇸';
+  Country? selectedCountry; // ✅ changed from manual flag/code
 
   bool isLoading = false;
   final Map<String, String?> _errors = {};
 
-  final List<Map<String, String>> countries = [
-    {'code': '+1', 'flag': '🇺🇸', 'name': 'United States'},
-    {'code': '+44', 'flag': '🇬🇧', 'name': 'United Kingdom'},
-    {'code': '+92', 'flag': '🇵🇰', 'name': 'Pakistan'},
-    {'code': '+91', 'flag': '🇮🇳', 'name': 'India'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // ✅ default = US 🇺🇸
+    selectedCountry = Country(
+      phoneCode: '1',
+      countryCode: 'US',
+      e164Sc: 0,
+      geographic: true,
+      level: 1,
+      name: 'United States',
+      example: '',
+      displayName: 'United States',
+      displayNameNoCountryCode: 'United States',
+      e164Key: '',
+    );
+  }
 
-  /// ✅ Validate Inputs (phone OR email required)
+  /// ✅ Validate Inputs (same logic)
   bool _validateInputs() {
     _errors.clear();
 
@@ -56,18 +68,16 @@ class _LoginScreenState extends State<LoginScreen> {
     return _errors.isEmpty;
   }
 
-  /// ✅ Login API Call
+  /// ✅ Admin Login API (unchanged)
   Future<void> _login() async {
     if (!_validateInputs()) return;
 
     setState(() => isLoading = true);
-
     final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_login.php");
 
-    // Phone diya gaya hai to phone bhejna hai, warna email
     final requestBody = {
       if (phoneCtrl.text.trim().isNotEmpty)
-        "phone_number": "$selectedCountryCode${phoneCtrl.text.trim()}",
+        "phone_number": "+${selectedCountry?.phoneCode ?? '1'}${phoneCtrl.text.trim()}",
       if (phoneCtrl.text.trim().isEmpty)
         "email": emailCtrl.text.trim(),
       "password": passwordCtrl.text.trim(),
@@ -75,7 +85,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(url, body: requestBody);
-
       print("🔗 API URL: $url");
       print("📤 Request Body: $requestBody");
       print("📥 Status Code: ${response.statusCode}");
@@ -85,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (result['status'] == 'success') {
         final user = result['user'] ?? result['data'];
-
         if (user['role_id'].toString() == "3") {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString("user_id", user['id'].toString());
@@ -96,7 +104,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("✅ Login successful!")),
           );
-
           Navigator.pushReplacementNamed(context, Routes.dashboard);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -122,7 +129,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final screenW = media.size.width;
-    final screenH = media.size.height;
     final isTablet = media.size.shortestSide >= 600;
     final contentMaxW = screenW.clamp(320.0, isTablet ? 560.0 : 440.0);
 
@@ -164,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     const Text(
-                                      'Enter your mobile number (optional)',
+                                      'Enter your mobile number',
                                       style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600),
@@ -172,6 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
+                                        // ✅ replaced with country_picker
                                         InkWell(
                                           onTap: () => _showCountryPicker(context),
                                           child: Container(
@@ -185,13 +192,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                             ),
                                             child: Row(
                                               children: [
-                                                Text(selectedFlag,
-                                                    style: const TextStyle(
-                                                        fontSize: 18)),
+                                                Text(selectedCountry?.flagEmoji ?? '🌎',
+                                                    style: const TextStyle(fontSize: 20)),
                                                 const SizedBox(width: 6),
-                                                Text(selectedCountryCode),
-                                                const Icon(Icons.arrow_drop_down,
-                                                    size: 20),
+                                                Text('+${selectedCountry?.phoneCode ?? ''}',
+                                                    style: const TextStyle(fontSize: 14)),
+                                                const Icon(Icons.arrow_drop_down, size: 20),
                                               ],
                                             ),
                                           ),
@@ -328,26 +334,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showCountryPicker(BuildContext context) {
-    showModalBottomSheet(
+    showCountryPicker(
       context: context,
-      builder: (context) {
-        return ListView(
-          shrinkWrap: true,
-          children: countries.map((country) {
-            return ListTile(
-              leading:
-                  Text(country['flag']!, style: const TextStyle(fontSize: 20)),
-              title: Text('${country['name']} (${country['code']})'),
-              onTap: () {
-                setState(() {
-                  selectedCountryCode = country['code']!;
-                  selectedFlag = country['flag']!;
-                });
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-        );
+      showPhoneCode: true, // ✅ shows +code
+      onSelect: (Country country) {
+        setState(() {
+          selectedCountry = country;
+        });
       },
     );
   }

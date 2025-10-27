@@ -184,153 +184,178 @@ class _PaymentScreenState extends material.State<PaymentScreen> {
     return material.Scaffold(
       backgroundColor: material.Colors.white,
       body: material.SafeArea(
-        child: material.SingleChildScrollView(
-          child: material.Column(
-            children: [
-              // ===== Header =====
-              material.Padding(
-                padding: const material.EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                child: material.Row(
-                  mainAxisAlignment: material.MainAxisAlignment.spaceBetween,
+        child: material.Column(
+          children: [
+            // ===== Scrollable Content =====
+            Expanded(
+              child: material.SingleChildScrollView(
+                child: material.Column(
                   children: [
-                    material.GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          material.MaterialPageRoute(builder: (context) => const ChurppyDrawer()),
-                        );
-                      },
+                    // ===== Header =====
+                    material.Padding(
+                      padding: const material.EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                       child: material.Row(
+                        mainAxisAlignment: material.MainAxisAlignment.spaceBetween,
                         children: [
-                          material.Image.asset('assets/icons/menu.png', width: 40, height: 40),
-                          const material.SizedBox(width: 10),
-                          material.Image.asset('assets/images/logo.png', width: 100, height: 40, fit: material.BoxFit.contain),
+                          material.GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                material.MaterialPageRoute(builder: (context) => const ChurppyDrawer()),
+                              );
+                            },
+                            child: material.Row(
+                              children: [
+                                material.Image.asset('assets/icons/menu.png', width: 40, height: 40),
+                                const material.SizedBox(width: 10),
+                                material.Image.asset('assets/images/logo.png', width: 100, height: 40, fit: material.BoxFit.contain),
+                              ],
+                            ),
+                          ),
+                          material.ClipOval(
+                            child: material.Image.asset('assets/images/truck.png', width: 70, height: 70, fit: material.BoxFit.cover),
+                          ),
                         ],
                       ),
                     ),
-                    material.ClipOval(
-                      child: material.Image.asset('assets/images/truck.png', width: 70, height: 70, fit: material.BoxFit.cover),
-                    ),
-                  ],
-                ),
-              ),
 
-              // ===== Payment Heading =====
-              material.Padding(
-                padding: const material.EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                child: material.Row(
-                  children: [
-                    material.Image.asset('assets/images/bell_churppy.png', height: 60, width: 60),
-                    const material.SizedBox(width: 10),
-                    const material.Text(
-                      "PAYMENT",
-                      style: material.TextStyle(
-                          fontSize: 20,
-                          fontWeight: material.FontWeight.bold,
-                          fontStyle: material.FontStyle.italic,
-                          color: material.Colors.black),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ===== Step Info =====
-              const material.Padding(
-                padding: material.EdgeInsets.only(top: 5, bottom: 10),
-                child: material.Column(
-                  crossAxisAlignment: material.CrossAxisAlignment.start,
-                  children: [
-                    material.Text("STEP 4 - Pay and Send Churppy Alert",
-                        style: material.TextStyle(fontSize: 18, fontWeight: material.FontWeight.w600)),
-                    material.SizedBox(height: 8),
-                    material.Text("Current Plan: Single Use",
-                        style: material.TextStyle(
-                            fontSize: 14,
-                            color: material.Colors.black,
-                            fontWeight: material.FontWeight.bold)),
-                  ],
-                ),
-              ),
-
-              // ===== Payment Details =====
-              material.Padding(
-                padding: const material.EdgeInsets.symmetric(horizontal: 20),
-                child: material.Container(
-                  padding: const material.EdgeInsets.all(16),
-                  child: material.Column(
-                    children: [
-                      _rowText("Churppy Alert", "\$16"),
-                      _rowText("PDF upload", "20"),
-                      _rowText("Credit Card Fee", "2"),
-                      const material.Divider(thickness: 1),
-                      _rowText("TOTAL:", "\$38", isBold: true, color: material.Colors.black),
-                      const material.SizedBox(height: 10),
-                      const material.Text(
-                        "Credit Card On File or Add New Card",
-                        style: material.TextStyle(fontSize: 13, color: material.Colors.black87),
+                    // ===== Payment Heading =====
+                    material.Padding(
+                      padding: const material.EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      child: material.Row(
+                        children: [
+                          material.Image.asset('assets/images/bell_churppy.png', height: 60, width: 60),
+                          const material.SizedBox(width: 10),
+                          const material.Text(
+                            "PAYMENT",
+                            style: material.TextStyle(
+                                fontSize: 20,
+                                fontWeight: material.FontWeight.bold,
+                                fontStyle: material.FontStyle.italic,
+                                color: material.Colors.black),
+                          ),
+                        ],
                       ),
-                      const material.SizedBox(height: 4),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
 
-              const material.SizedBox(height: 20),
+                    // ===== Step Info =====
+                    const material.Padding(
+                      padding: material.EdgeInsets.only(top: 5, bottom: 10),
+                      child: material.Column(
+                        crossAxisAlignment: material.CrossAxisAlignment.start,
+                        children: [
+                          material.Text("STEP 4 - Pay and Send Churppy Alert",
+                              style: material.TextStyle(fontSize: 18, fontWeight: material.FontWeight.w600)),
+                          material.SizedBox(height: 8),
+                          material.Text("Current Plan: Single Use",
+                              style: material.TextStyle(
+                                  fontSize: 14,
+                                  color: material.Colors.black,
+                                  fontWeight: material.FontWeight.bold)),
+                        ],
+                      ),
+                    ),
 
-              // ===== Pay Button =====
-              material.Padding(
-                padding: const material.EdgeInsets.symmetric(horizontal: 60, vertical: 2),
-                child: isLoading
-                    ? const material.CircularProgressIndicator()
-                    : _styledButton("Pay/Send Churppy Alert", material.Colors.black, _handlePayment),
-              ),
-
-              const material.SizedBox(height: 20),
-
-              // ===== Contact Us Button =====
-              material.Padding(
-                padding: const material.EdgeInsets.symmetric(horizontal: 120, vertical: 20),
-                child: _styledButton(
-                  "Contact Us",
-                  material.Colors.red,
-                  () {
-                    Navigator.push(
-                      context,
-                      material.MaterialPageRoute(builder: (context) => const ContactUsScreen()),
-                    );
-                  },
-                ),
-              ),
-
-              const material.SizedBox(height: 20),
-
-              // ===== Customize Alerts Link =====
-              material.Center(
-                child: material.TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      material.MaterialPageRoute(builder: (context) => const ReceiptScreen()),
-                    );
-                  },
-                  child: const material.Text.rich(
-                    material.TextSpan(
-                      children: [
-                        material.TextSpan(
-                          text: "TRY CUSTOMIZE ALERTS",
-                          style: material.TextStyle(
-                              color: material.Colors.purple,
-                              fontWeight: material.FontWeight.bold),
+                    // ===== Payment Details =====
+                    material.Padding(
+                      padding: const material.EdgeInsets.symmetric(horizontal: 20),
+                      child: material.Container(
+                        padding: const material.EdgeInsets.all(16),
+                        child: material.Column(
+                          children: [
+                            _rowText("Churppy Alert", "\$16"),
+                            _rowText("PDF upload", "20"),
+                            _rowText("Credit Card Fee", "2"),
+                            const material.Divider(thickness: 1),
+                            _rowText("TOTAL:", "\$38", isBold: true, color: material.Colors.black),
+                            const material.SizedBox(height: 10),
+                            const material.Text(
+                              "Credit Card On File or Add New Card",
+                              style: material.TextStyle(fontSize: 13, color: material.Colors.black87),
+                            ),
+                            const material.SizedBox(height: 4),
+                          ],
                         ),
-                      ],
+                      ),
+                    ),
+
+                    const material.SizedBox(height: 20),
+
+                    // ===== Pay Button =====
+                    material.Padding(
+                      padding: const material.EdgeInsets.symmetric(horizontal: 60, vertical: 2),
+                      child: isLoading
+                          ? const material.CircularProgressIndicator()
+                          : _styledButton("Pay/Send Churppy Alert", material.Colors.black, _handlePayment),
+                    ),
+
+                    const material.SizedBox(height: 20),
+
+                    // ===== Contact Us Button =====
+                    material.Padding(
+                      padding: const material.EdgeInsets.symmetric(horizontal: 120, vertical: 20),
+                      child: _styledButton(
+                        "Contact Us",
+                        material.Colors.red,
+                        () {
+                          Navigator.push(
+                            context,
+                            material.MaterialPageRoute(builder: (context) => const ContactUsScreen()),
+                          );
+                        },
+                      ),
+                    ),
+
+                    const material.SizedBox(height: 20),
+
+                    // ===== Customize Alerts Link =====
+                    material.Center(
+                      child: material.TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            material.MaterialPageRoute(builder: (context) => const ReceiptScreen()),
+                          );
+                        },
+                        child: const material.Text.rich(
+                          material.TextSpan(
+                            children: [
+                              material.TextSpan(
+                                text: "TRY CUSTOMIZE ALERTS",
+                                style: material.TextStyle(
+                                    color: material.Colors.purple,
+                                    fontWeight: material.FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const material.SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+
+            /// 🔰 NEW: Back Arrow Section (Exactly like Drawer)
+            Container(
+              color: material.Colors.white,
+              padding: const material.EdgeInsets.only(left: 16, top: 10, bottom: 16),
+              width: double.infinity,
+              child: material.Row(
+                children: [
+                  material.CircleAvatar(
+                    backgroundColor: material.Colors.grey[300],
+                    child: material.IconButton(
+                      icon: const material.Icon(material.Icons.arrow_back, color: material.Colors.black),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ),
-                ),
+                ],
               ),
-
-              const material.SizedBox(height: 20),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

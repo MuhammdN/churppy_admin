@@ -1,11 +1,15 @@
+// ------------------------ IMPORTS ------------------------
 import 'dart:convert';
 import 'dart:io';
 import 'package:churppy_admin/screens/login.dart';
+import 'package:churppy_admin/screens/orders_history_screen.dart';
+import 'package:churppy_admin/screens/payment_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geocoding/geocoding.dart'; // ✅ نیا package شامل کریں
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,18 +19,22 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Data
+  // ------------------------ DATA ------------------------
   String _firstName = "";
   String _lastName = "";
   String _email = "";
   String _address = "";
   String _phoneNumber = "";
-  String _password = "●●●●●●●●"; // display only
+  String _password = "●●●●●●●●"; // Display only
   String _profileImage = "";
   File? _selectedImage;
   bool _isEditing = false;
   bool _isLoading = false;
   int? _userId;
+
+  // ✅ Business name
+  String _businessName = "";
+  final TextEditingController _businessController = TextEditingController();
 
   // Controllers
   final TextEditingController _firstNameController = TextEditingController();
@@ -35,7 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController =
-  TextEditingController(text: "●●●●●●●●"); // static look
+      TextEditingController(text: "●●●●●●●●");
 
   // Theme tokens
   final Color _purple = const Color(0xFF804692);
@@ -48,6 +56,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadUserIdAndFetchData();
   }
 
+  // ------------------------ COORDINATES TO ADDRESS ------------------------
+  Future<String> _convertCoordinatesToAddress(String coordinates) async {
+    try {
+      // Coordinates format check: "latitude,longitude" یا similar
+      final parts = coordinates.split(',');
+      if (parts.length >= 2) {
+        final lat = double.tryParse(parts[0].trim());
+        final lng = double.tryParse(parts[1].trim());
+        
+        if (lat != null && lng != null) {
+          // Geocoding package استعمال کرکے coordinates سے address حاصل کریں
+          final placemarks = await placemarkFromCoordinates(lat, lng);
+          
+          if (placemarks.isNotEmpty) {
+            final placemark = placemarks.first;
+            // Complete address بنائیں
+            final address = [
+              placemark.street,
+              placemark.locality,
+              placemark.subLocality,
+              placemark.administrativeArea,
+              placemark.postalCode,
+              placemark.country
+            ].where((part) => part != null && part.isNotEmpty).join(', ');
+            
+            return address.isNotEmpty ? address : coordinates;
+          }
+        }
+      }
+      return coordinates; // اگر conversion نہ ہو سکے تو original coordinates واپس کریں
+    } catch (e) {
+      debugPrint("Coordinate conversion error: $e");
+      return coordinates; // Error کی صورت میں original coordinates واپس کریں
+    }
+  }
+
+  // ------------------------ USER LOAD ------------------------
   Future<void> _loadUserIdAndFetchData() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString("user_id");
@@ -57,10 +102,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
       if (_userId != null) {
         await _fetchUserDataFromServer(_userId!);
+        await _fetchBusinessName(_userId!);
       }
     }
   }
 
+  // ------------------------ GUESS NAME ------------------------
+  String _guessBusinessName(Map<String, dynamic> data) {
+    final candidates = [
+      'business_name',
+      'business_title',
+      'title',
+      'name',
+      'about_us',
+    ];
+
+    for (final key in candidates) {
+      final val = data[key];
+      if (val != null && val.toString().trim().isNotEmpty) {
+        return val.toString().trim();
+      }
+    }
+
+    final fn = data['first_name']?.toString() ?? '';
+    final ln = data['last_name']?.toString() ?? '';
+    final full = ('$fn $ln').trim();
+    if (full.isNotEmpty) return full;
+
+    return "Business";
+  }
+
+  // ------------------------ FETCH BUSINESS ------------------------
+  Future<void> _fetchBusinessName(int id) async {
+    try {
+      final url1 = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/user_with_merchant.php?id=$id");
+      final r1 = await http.get(url1);
+
+      if (r1.statusCode == 200) {
+        final j = jsonDecode(r1.body);
+        if (j['status'] == 'success' && j['data'] is Map<String, dynamic>) {
+          final bn = _guessBusinessName(j['data']);
+          setState(() {
+            _businessName = bn;
+            _businessController.text = bn;
+          });
+          return;
+        }
+      }
+
+      // fallback
+      final url2 = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/user.php?id=$id");
+      final r2 = await http.get(url2);
+
+      if (r2.statusCode == 200) {
+        final j = jsonDecode(r2.body);
+        if (j['status'] == 'success' && j['data'] is Map<String, dynamic>) {
+          final bn = _guessBusinessName(j['data']);
+          setState(() {
+            _businessName = bn;
+            _businessController.text = bn;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Business name fetch error: $e");
+    }
+  }
+
+  // ------------------------ FETCH USER ------------------------
   Future<void> _fetchUserDataFromServer(int userId) async {
     setState(() => _isLoading = true);
     try {
@@ -71,18 +182,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final responseData = jsonDecode(response.body);
         if (responseData['status'] == 'success') {
           final user = responseData['data'];
+          
+          // ✅ Address کو convert کریں اگر coordinates ہیں
+          String rawAddress = user['address'] ?? "";
+          String convertedAddress = rawAddress;
+          
+          // Check if address contains coordinates pattern
+          if (rawAddress.contains(RegExp(r'^-?\d+\.?\d*,\s*-?\d+\.?\d*$'))) {
+            convertedAddress = await _convertCoordinatesToAddress(rawAddress);
+          }
+          
           setState(() {
             _firstName = user['first_name'] ?? "";
             _lastName = user['last_name'] ?? "";
             _email = user['email'] ?? "";
-            _address = user['address'] ?? "";
+            _address = convertedAddress; // ✅ Converted address استعمال کریں
             _phoneNumber = user['phone_number'] ?? "";
             _profileImage = user['image'] ?? "";
 
             _firstNameController.text = "$_firstName $_lastName";
             _lastNameController.text = _lastName;
             _emailController.text = _email;
-            _addressController.text = _address;
+            _addressController.text = _address; // ✅ Converted address
             _phoneController.text = _phoneNumber;
           });
         }
@@ -98,6 +219,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ------------------------ PICK IMAGE ------------------------
   Future<void> _pickImage() async {
     try {
       final picker = ImagePicker();
@@ -115,6 +237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ------------------------ UPLOAD IMAGE ------------------------
   Future<void> _uploadImageToServer(File imageFile) async {
     if (_userId == null) return;
     setState(() => _isLoading = true);
@@ -140,23 +263,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ------------------------ SAVE ALL ------------------------
   Future<void> _saveUserData() async {
     if (_userId == null) return;
     setState(() => _isLoading = true);
     try {
-      final url =
-      Uri.parse('https://churppy.eurekawebsolutions.com/api/user.php');
+      final url = Uri.parse('https://churppy.eurekawebsolutions.com/api/user.php');
       final req = http.MultipartRequest('POST', url);
+
       req.fields['id'] = _userId.toString();
       req.fields['first_name'] = _firstNameController.text;
-      req.fields['last_name'] = _lastNameController.text;
+      req.fields['last_name'] = "";
       req.fields['email'] = _emailController.text;
-      req.fields['address'] = _addressController.text;
+      req.fields['address'] = _addressController.text; // ✅ User کا edited address
       req.fields['phone_number'] = _phoneController.text;
 
+      // ✅ BUSINESS NAME INCLUDED
+      req.fields['business_title'] = _businessController.text;
+
       if (_selectedImage != null) {
-        req.files.add(
-            await http.MultipartFile.fromPath('image', _selectedImage!.path));
+        req.files
+            .add(await http.MultipartFile.fromPath('image', _selectedImage!.path));
       }
 
       final res = await req.send();
@@ -176,6 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ------------------------ LOGOUT ------------------------
   Future<void> _confirmLogout() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -194,17 +322,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+
     if (ok == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('user');
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (_) => false,
+        (_) => false,
       );
     }
   }
 
+  // ------------------------ UI ------------------------
   @override
   Widget build(BuildContext context) {
     final poppins = GoogleFonts.poppins();
@@ -218,202 +348,226 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: _purple,
       body: SafeArea(
         child: _isLoading
-            ? const Center(
-            child: CircularProgressIndicator(color: Colors.white))
+            ? const Center(child: CircularProgressIndicator(color: Colors.white))
             : Column(
-          children: [
-            // Top bar
-            Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 3, vertical: 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        color: Colors.white, size: 20),
-                    onPressed: () => Navigator.pop(context),
+                  // Top bar
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.white, size: 20),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.settings,
+                              color: Colors.white, size: 22),
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.white,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.vertical(top: Radius.circular(20)),
+                              ),
+                              builder: (_) => const _SettingsSheet(),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.settings,
-                        color: Colors.white, size: 20),
-                    onPressed: () {},
+
+                  const SizedBox(height: 12),
+
+                  // Profile image square
+                  GestureDetector(
+                    onTap: _isEditing ? _pickImage : null,
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _green, width: 3),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                              color: _green.withOpacity(0.5),
+                              blurRadius: 14,
+                              spreadRadius: 1),
+                        ],
+                        image: DecorationImage(
+                          image: _getProfileImage(),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.only(topLeft: Radius.circular(30),
+                                topRight: Radius.circular(30)),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("CHURPPY", style: roboto),
+                                      
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right,
+                                    size: 22, color: Colors.black54),
+                              ],
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // ✅ Business Name Field
+                            _labeledField("Business Name",
+                                controller: _businessController,
+                                hint: "Business Name",
+                                textStyle: poppins),
+
+                            _labeledField("Name",
+                                controller: _firstNameController,
+                                hint: "Name",
+                                textStyle: poppins),
+                            _labeledField("Email",
+                                controller: _emailController,
+                                hint: "email@churppy.com",
+                                textStyle: poppins),
+                            _labeledField("Address",
+                                controller: _addressController,
+                                hint: "Your address",
+                                textStyle: poppins),
+                            _passwordField(poppins),
+
+                            const SizedBox(height: 6),
+                            const Divider(),
+
+                           _staticRow(
+  "Payment Details",
+  poppins,
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PaymentDetailsScreen()),
+    );
+  },
+),
+
+_staticRow(
+  "Churppy Alerts History and MORE",
+  poppins,
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const OrdersHistoryScreen()),
+    );
+  },
+),
+
+
+                            const SizedBox(height: 14),
+
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      if (_isEditing) {
+                                        _saveUserData();
+                                      } else {
+                                        setState(() => _isEditing = true);
+                                      }
+                                    },
+                                    icon: Icon(
+                                        _isEditing ? Icons.save : Icons.edit,
+                                        size: 18),
+                                    label: Text(
+                                        _isEditing ? "Save" : "Edit Profile",
+                                        style: poppins),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _purple,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14, horizontal: 16),
+                                      shape: const StadiumBorder(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _confirmLogout,
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(color: _green, width: 2),
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14, horizontal: 16),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text("Log out",
+                                            style: poppins.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black87)),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: _green,
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                          ),
+                                          child: const Icon(
+                                              Icons.arrow_forward_rounded,
+                                              size: 18,
+                                              color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // ✅ Profile image (Square)
-            GestureDetector(
-              onTap: _isEditing ? _pickImage : null,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  border: Border.all(color: _green, width: 3),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _green.withOpacity(0.5),
-                        blurRadius: 14,
-                        spreadRadius: 1),
-                  ],
-                  image: DecorationImage(
-                    image: _getProfileImage(),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Card body
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(30),
-                    topRight: Radius.circular(30),
-                  ),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // ✅ CHURPPY Heading inside Card
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text("CHURPPY", style: roboto),
-                          ),
-                          const Icon(Icons.chevron_right,
-                              size: 22, color: Colors.black54),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      _labeledField("Name",
-                          controller: _firstNameController,
-                          hint: "Name",
-                          textStyle: poppins),
-                      _labeledField("Email",
-                          controller: _emailController,
-                          hint: "email@churppy.com",
-                          textStyle: poppins),
-                      _labeledField("Address",
-                          controller: _addressController,
-                          hint: "Your address",
-                          textStyle: poppins),
-                      _passwordField(poppins),
-
-                      const SizedBox(height: 6),
-                      const Divider(),
-
-                      // Section with buttons
-                      _staticRow("Product Details", poppins,
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text("Product Details tapped")),
-                            );
-                          }),
-                      _staticRow("Churppy Alerts History and MORE",
-                          poppins, onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                  Text("Churppy Alerts History tapped")),
-                            );
-                          }),
-
-                      const SizedBox(height: 14),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                if (_isEditing) {
-                                  _saveUserData();
-                                } else {
-                                  setState(() => _isEditing = true);
-                                }
-                              },
-                              icon: Icon(
-                                  _isEditing ? Icons.save : Icons.edit,
-                                  size: 18),
-                              label: Text(
-                                  _isEditing ? "Save" : "Edit Profile",
-                                  style: poppins),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _purple,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 14, horizontal: 16),
-                                shape: const StadiumBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _confirmLogout,
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: _green, width: 2),
-                                shape: const StadiumBorder(),
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 14, horizontal: 16),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment:
-                                MainAxisAlignment.center,
-                                children: [
-                                  Text("Log out",
-                                      style: poppins.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87)),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: _green,
-                                      borderRadius:
-                                      BorderRadius.circular(14),
-                                    ),
-                                    child: const Icon(
-                                        Icons.arrow_forward_rounded,
-                                        size: 18,
-                                        color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
+  // ------------------------ MISC WIDGETS ------------------------
   ImageProvider _getProfileImage() {
     if (_selectedImage != null) {
       return FileImage(_selectedImage!);
-    } else if (_profileImage.isNotEmpty && _profileImage.startsWith("http")) {
+    } else if (_profileImage.isNotEmpty &&
+        _profileImage.startsWith("http")) {
       return NetworkImage(_profileImage);
     } else {
       return const AssetImage("assets/images/profile_pic.png");
@@ -422,8 +576,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _labeledField(String label,
       {required TextEditingController controller,
-        String? hint,
-        required TextStyle textStyle}) {
+      String? hint,
+      required TextStyle textStyle}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -443,7 +597,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               hintText: hint,
               isDense: true,
               contentPadding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+                  const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
               filled: true,
               fillColor: _chipBg,
               border: OutlineInputBorder(
@@ -478,7 +632,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               prefixIcon: const Icon(Icons.lock_outlined, size: 18),
               isDense: true,
               contentPadding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+                  const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
               filled: true,
               fillColor: _chipBg,
               border: OutlineInputBorder(
@@ -499,12 +653,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           title: Text(title, style: textStyle.copyWith(fontSize: 14)),
-          trailing:
-          const Icon(Icons.chevron_right, size: 20, color: Colors.black54),
-          onTap: onTap, // ✅ tappable if callback provided
+          trailing: const Icon(Icons.chevron_right,
+              size: 20, color: Colors.black54),
+          onTap: onTap,
         ),
         const Divider(height: 0),
       ],
+    );
+  }
+}
+
+// ------------------------ SETTINGS SHEET ------------------------
+class _SettingsSheet extends StatelessWidget {
+  const _SettingsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Center(
+            child: Icon(Icons.settings, color: Color(0xFF804692), size: 40),
+          ),
+          const SizedBox(height: 10),
+          const Center(
+            child: Text(
+              "Settings",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF804692),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined,
+                color: Colors.black87),
+            title: const Text("Privacy Policy"),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.info_outline, color: Colors.black87),
+            title: const Text("About App"),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+
+          const SizedBox(height: 10),
+          Center(
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF804692),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              icon: const Icon(Icons.check, color: Colors.white),
+              label: const Text("Done", style: TextStyle(color: Colors.white)),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 }

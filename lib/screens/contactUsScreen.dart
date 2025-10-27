@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ContactUsScreen extends StatefulWidget {
   const ContactUsScreen({super.key});
@@ -12,6 +13,7 @@ class ContactUsScreen extends StatefulWidget {
 class _ContactUsScreenState extends State<ContactUsScreen> {
   final _formKey = GlobalKey<FormState>();
   bool isLoading = false;
+  bool isUserDataLoading = false;
 
   // 🔹 Controllers
   final TextEditingController titleCtrl = TextEditingController();
@@ -19,8 +21,143 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   final TextEditingController messageCtrl = TextEditingController();
   final TextEditingController contactNumberCtrl = TextEditingController();
 
+  // 🔹 Dropdown Values
+  String? selectedCategory;
+  final List<String> categories = [
+    'Customize Your Churppy Alert',
+    'Submit Feedback', 
+    'Billing',
+    'Other'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  // ✅ UPDATED METHOD: Load User Data from Shared Preferences and API
+  Future<void> _loadUserData() async {
+    setState(() => isUserDataLoading = true);
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id'); // ✅ Changed to getString
+      
+      debugPrint("🔍 User ID from SharedPreferences: $userId");
+
+      if (userId != null && userId.isNotEmpty) {
+        // Try user_with_merchant.php first
+        await _fetchFromUserWithMerchant(userId);
+      } else {
+        setState(() => isUserDataLoading = false);
+        debugPrint("⚠️ No user ID found in SharedPreferences");
+      }
+    } catch (e) {
+      debugPrint("❌ Error loading user data: $e");
+      setState(() => isUserDataLoading = false);
+    }
+  }
+
+  // ✅ NEW: Fetch from user_with_merchant.php
+  Future<void> _fetchFromUserWithMerchant(String userId) async {
+    try {
+      final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user_with_merchant.php?id=$userId"
+      );
+
+      final response = await http.get(url);
+      debugPrint("🔍 user_with_merchant API Response Status: ${response.statusCode}");
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        debugPrint("🔍 user_with_merchant API Response: $result");
+
+        if (result['status'] == 'success' && result['data'] != null) {
+          final userData = result['data'];
+          _autoFillUserData(userData);
+          return;
+        }
+      }
+
+      // If user_with_merchant fails, try user.php
+      await _fetchFromUser(userId);
+    } catch (e) {
+      debugPrint("❌ Error in user_with_merchant: $e");
+      await _fetchFromUser(userId);
+    }
+  }
+
+  // ✅ NEW: Fetch from user.php (fallback)
+  Future<void> _fetchFromUser(String userId) async {
+    try {
+      final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$userId"
+      );
+
+      final response = await http.get(url);
+      debugPrint("🔍 user.php API Response Status: ${response.statusCode}");
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        debugPrint("🔍 user.php API Response: $result");
+
+        if (result['status'] == 'success' && result['data'] != null) {
+          final userData = result['data'];
+          _autoFillUserData(userData);
+          return;
+        }
+      }
+
+      setState(() => isUserDataLoading = false);
+    } catch (e) {
+      debugPrint("❌ Error in user.php: $e");
+      setState(() => isUserDataLoading = false);
+    }
+  }
+
+  // ✅ NEW: Auto-fill user data in form fields
+  void _autoFillUserData(Map<String, dynamic> userData) {
+    setState(() {
+      // Auto-fill email
+      final email = userData['email']?.toString();
+      if (email != null && email.isNotEmpty) {
+        emailCtrl.text = email;
+      }
+
+      // Auto-fill contact number with country code
+      final phone = userData['phone_number']?.toString() ?? 
+                   userData['phone']?.toString() ?? 
+                   userData['contact_number']?.toString();
+      
+      if (phone != null && phone.isNotEmpty) {
+        // Add country code if not present (assuming US +1 as default)
+        if (!phone.startsWith('+')) {
+          contactNumberCtrl.text = '+1 $phone';
+        } else {
+          contactNumberCtrl.text = phone;
+        }
+      }
+
+      isUserDataLoading = false;
+    });
+
+    debugPrint("✅ Auto-filled Email: ${emailCtrl.text}");
+    debugPrint("✅ Auto-filled Contact: ${contactNumberCtrl.text}");
+  }
+
   Future<void> _submitContact() async {
     if (!_formKey.currentState!.validate()) return;
+    if (selectedCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("❌ Please select a category"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     setState(() => isLoading = true);
 
@@ -30,16 +167,18 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
     final requestBody = {
       "title": titleCtrl.text.trim(),
       "email": emailCtrl.text.trim(),
-      "info_email": messageCtrl.text.trim(), // ✅ message as info_email
+      "info_email": messageCtrl.text.trim(),
       "contact_number": contactNumberCtrl.text.trim(),
+      "category": selectedCategory!,
+      "message": messageCtrl.text.trim(),
     };
 
     try {
       final response = await http.post(url, body: requestBody);
 
-      print("📤 Request Body: $requestBody");
-      print("📥 Status Code: ${response.statusCode}");
-      print("📥 Raw Response: ${response.body}");
+      debugPrint("📤 Request Body: $requestBody");
+      debugPrint("📥 Status Code: ${response.statusCode}");
+      debugPrint("📥 Raw Response: ${response.body}");
 
       final result = json.decode(response.body);
 
@@ -53,9 +192,8 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
         );
 
         titleCtrl.clear();
-        emailCtrl.clear();
         messageCtrl.clear();
-        contactNumberCtrl.clear();
+        setState(() => selectedCategory = null);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -66,7 +204,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
         );
       }
     } catch (e) {
-      print("⚠️ Error: $e");
+      debugPrint("⚠️ Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Failed to connect: $e"),
@@ -86,7 +224,6 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
     final isTablet = w > 600;
     final isDesktop = w > 1024;
     
-    // Responsive scaling function
     double fs(double size) {
       if (isDesktop) return size * 1.3;
       if (isTablet) return size * 1.15;
@@ -104,10 +241,225 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
     );
   }
 
+  Widget _buildCategoryDropdown(double Function(double) fs, double Function(double) hp, bool isTablet) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(fs(12)),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: selectedCategory,
+        decoration: InputDecoration(
+          labelText: "Category",
+          labelStyle: TextStyle(color: Colors.grey[600], fontSize: fs(13)),
+          prefixIcon: Icon(Icons.category, color: Color(0xFF804692), size: fs(20)),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: fs(16), vertical: fs(isTablet ? 16 : 14)),
+        ),
+        items: categories.map((String category) {
+          return DropdownMenuItem<String>(
+            value: category,
+            child: Text(
+              category,
+              style: TextStyle(fontSize: fs(14), color: Colors.black87),
+            ),
+          );
+        }).toList(),
+        onChanged: (String? newValue) {
+          setState(() {
+            selectedCategory = newValue;
+          });
+        },
+        validator: (value) => value == null ? 'Please select a category' : null,
+      ),
+    );
+  }
+
+  Widget _buildMobileForm(double Function(double) fs, double Function(double) hp) {
+    return Column(
+      children: [
+        _buildCategoryDropdown(fs, hp, false),
+        SizedBox(height: hp(1.5)),
+        
+        _buildCustomField(
+          label: "Title",
+          controller: titleCtrl,
+          icon: Icons.title,
+          fs: fs,
+          validator: (v) => v!.trim().isEmpty ? "Title is required" : null,
+        ),
+        SizedBox(height: hp(1.5)),
+        
+        _buildCustomField(
+          label: "Email Address",
+          controller: emailCtrl,
+          icon: Icons.email_outlined,
+          fs: fs,
+          keyboardType: TextInputType.emailAddress,
+          isLoading: isUserDataLoading,
+          validator: (v) {
+            if (v!.trim().isEmpty) {
+              return "Email is required";
+            } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())) {
+              return "Enter a valid email";
+            }
+            return null;
+          },
+        ),
+        SizedBox(height: hp(1.5)),
+        
+        _buildCustomField(
+          label: "Contact Number",
+          controller: contactNumberCtrl,
+          icon: Icons.phone_iphone,
+          fs: fs,
+          keyboardType: TextInputType.phone,
+          isLoading: isUserDataLoading,
+          validator: (v) => v!.trim().isEmpty ? "Contact number is required" : null,
+        ),
+        SizedBox(height: hp(1.5)),
+        
+        _buildCustomField(
+          label: "Your Message",
+          controller: messageCtrl,
+          icon: Icons.description,
+          fs: fs,
+          maxLines: 5,
+          validator: (v) => v!.trim().isEmpty ? "Message is required" : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabletFormGrid(double Function(double) fs, double Function(double) hp, double Function(double) wp) {
+    return Column(
+      children: [
+        _buildCategoryDropdown(fs, hp, true),
+        SizedBox(height: hp(2)),
+        
+        Row(
+          children: [
+            Expanded(
+              child: _buildCustomField(
+                label: "Title",
+                controller: titleCtrl,
+                icon: Icons.title,
+                fs: fs,
+                validator: (v) => v!.trim().isEmpty ? "Title is required" : null,
+              ),
+            ),
+            SizedBox(width: wp(2)),
+            Expanded(
+              child: _buildCustomField(
+                label: "Contact Number",
+                controller: contactNumberCtrl,
+                icon: Icons.phone_iphone,
+                fs: fs,
+                keyboardType: TextInputType.phone,
+                isLoading: isUserDataLoading,
+                validator: (v) => v!.trim().isEmpty ? "Contact number is required" : null,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: hp(2)),
+        
+        _buildCustomField(
+          label: "Email Address",
+          controller: emailCtrl,
+          icon: Icons.email_outlined,
+          fs: fs,
+          keyboardType: TextInputType.emailAddress,
+          isLoading: isUserDataLoading,
+          validator: (v) {
+            if (v!.trim().isEmpty) {
+              return "Email is required";
+            } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())) {
+              return "Enter a valid email";
+            }
+            return null;
+          },
+        ),
+        SizedBox(height: hp(2)),
+        
+        _buildCustomField(
+          label: "Your Message",
+          controller: messageCtrl,
+          icon: Icons.description,
+          fs: fs,
+          maxLines: 6,
+          validator: (v) => v!.trim().isEmpty ? "Message is required" : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    required double Function(double) fs,
+    String? Function(String?)? validator,
+    bool obscure = false,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+    bool isLoading = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(fs(12)),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Stack(
+        children: [
+          TextFormField(
+            controller: controller,
+            obscureText: obscure,
+            maxLines: maxLines,
+            keyboardType: keyboardType,
+            validator: validator,
+            enabled: !isLoading,
+            style: TextStyle(
+              fontSize: fs(14), 
+              color: isLoading ? Colors.grey : Colors.black87,
+            ),
+            decoration: InputDecoration(
+              labelText: label,
+              labelStyle: TextStyle(
+                color: isLoading ? Colors.grey : Colors.grey[600], 
+                fontSize: fs(13)
+              ),
+              prefixIcon: Icon(
+                icon, 
+                color: isLoading ? Colors.grey : Color(0xFF804692), 
+                size: fs(20)
+              ),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: fs(16), vertical: fs(14)),
+            ),
+          ),
+          if (isLoading)
+            Positioned(
+              right: 10,
+              top: 0,
+              bottom: 0,
+              child: SizedBox(
+                width: fs(20),
+                height: fs(20),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF804692),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDesktopLayout(double Function(double) fs, double Function(double) hp, double Function(double) wp) {
     return Row(
       children: [
-        // Left Side - Contact Info
         Expanded(
           flex: 4,
           child: Container(
@@ -142,7 +494,6 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
           ),
         ),
         
-        // Right Side - Form
         Expanded(
           flex: 6,
           child: SingleChildScrollView(
@@ -169,10 +520,8 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   Widget _buildMobileTabletLayout(double Function(double) fs, double Function(double) hp, double Function(double) wp, bool isTablet) {
     return Column(
       children: [
-        // Header
         _buildHeader(fs, wp, isTablet),
         
-        // Content
         Expanded(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
@@ -231,7 +580,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
               ),
             ),
           ),
-          SizedBox(width: wp(8)), // Balance for back button
+          SizedBox(width: wp(8)),
         ],
       ),
     );
@@ -404,7 +753,6 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
             
             SizedBox(height: hp(3)),
             
-            // Submit Button
             Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -431,7 +779,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
                               color: Colors.white,
                               strokeWidth: 2,
                             ),
-                          )
+                          ) 
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -451,148 +799,6 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMobileForm(double Function(double) fs, double Function(double) hp) {
-    return Column(
-      children: [
-        _buildCustomField(
-          label: "Title",
-          controller: titleCtrl,
-          icon: Icons.title,
-          fs: fs,
-          validator: (v) => v!.trim().isEmpty ? "Title is required" : null,
-        ),
-        SizedBox(height: hp(1.5)),
-        
-        _buildCustomField(
-          label: "Email Address",
-          controller: emailCtrl,
-          icon: Icons.email_outlined,
-          fs: fs,
-          keyboardType: TextInputType.emailAddress,
-          validator: (v) {
-            if (v!.trim().isEmpty) {
-              return "Email is required";
-            } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())) {
-              return "Enter a valid email";
-            }
-            return null;
-          },
-        ),
-        SizedBox(height: hp(1.5)),
-        
-        _buildCustomField(
-          label: "Contact Number",
-          controller: contactNumberCtrl,
-          icon: Icons.phone_iphone,
-          fs: fs,
-          keyboardType: TextInputType.phone,
-          validator: (v) => v!.trim().isEmpty ? "Contact number is required" : null,
-        ),
-        SizedBox(height: hp(1.5)),
-        
-        _buildCustomField(
-          label: "Your Message",
-          controller: messageCtrl,
-          icon: Icons.description,
-          fs: fs,
-          maxLines: 5,
-          validator: (v) => v!.trim().isEmpty ? "Message is required" : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTabletFormGrid(double Function(double) fs, double Function(double) hp, double Function(double) wp) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildCustomField(
-                label: "Title",
-                controller: titleCtrl,
-                icon: Icons.title,
-                fs: fs,
-                validator: (v) => v!.trim().isEmpty ? "Title is required" : null,
-              ),
-            ),
-            SizedBox(width: wp(2)),
-            Expanded(
-              child: _buildCustomField(
-                label: "Contact Number",
-                controller: contactNumberCtrl,
-                icon: Icons.phone_iphone,
-                fs: fs,
-                keyboardType: TextInputType.phone,
-                validator: (v) => v!.trim().isEmpty ? "Contact number is required" : null,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: hp(2)),
-        
-        _buildCustomField(
-          label: "Email Address",
-          controller: emailCtrl,
-          icon: Icons.email_outlined,
-          fs: fs,
-          keyboardType: TextInputType.emailAddress,
-          validator: (v) {
-            if (v!.trim().isEmpty) {
-              return "Email is required";
-            } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())) {
-              return "Enter a valid email";
-            }
-            return null;
-          },
-        ),
-        SizedBox(height: hp(2)),
-        
-        _buildCustomField(
-          label: "Your Message",
-          controller: messageCtrl,
-          icon: Icons.description,
-          fs: fs,
-          maxLines: 6,
-          validator: (v) => v!.trim().isEmpty ? "Message is required" : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCustomField({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    required double Function(double) fs,
-    String? Function(String?)? validator,
-    bool obscure = false,
-    int maxLines = 1,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(fs(12)),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: TextFormField(
-        controller: controller,
-        obscureText: obscure,
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        validator: validator,
-        style: TextStyle(fontSize: fs(14), color: Colors.black87),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: Colors.grey[600], fontSize: fs(13)),
-          prefixIcon: Icon(icon, color: Color(0xFF804692), size: fs(20)),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: fs(16), vertical: fs(14)),
         ),
       ),
     );

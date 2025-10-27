@@ -293,7 +293,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
         );
 
         Future.delayed(const Duration(seconds: 1), () {
-          Navigator.pushReplacementNamed(context, "/login");
+          Navigator.pushReplacementNamed(context, "/dashboard");
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -392,21 +392,34 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () {},
-            child: Image.asset('assets/icons/menu.png', width: 40),
+  return Padding(
+    padding: const EdgeInsets.all(14),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // ✅ Left Menu Icon (unchanged)
+        GestureDetector(
+          onTap: () {},
+          child: Image.asset('assets/icons/menu.png', width: 40),
+        ),
+
+        // ✅ Center Logo (kept same)
+        Expanded(
+          child: Center(
+            child: Image.asset(
+              'assets/images/logo.png',
+              width: 100,
+            ),
           ),
-          Image.asset('assets/images/logo.png', width: 100),
-          Image.asset('assets/images/truck.png', width: 60),
-        ],
-      ),
-    );
-  }
+        ),
+
+        // 🚫 Removed truck.png (kept alignment clean)
+        const SizedBox(width: 40), // keeps same spacing on right side
+      ],
+    ),
+  );
+}
+
 
   Widget _plansTable() {
     if (packages.length < 3) {

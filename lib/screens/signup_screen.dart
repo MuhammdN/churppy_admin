@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'package:churppy_admin/screens/login.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart'; // ✅ Added
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:country_picker/country_picker.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:geolocator/geolocator.dart';
 import '../routes.dart';
 import 'churppy_alert_plan.dart';
 
@@ -14,11 +17,10 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  String selectedCountryCode = '+1';
-  String selectedFlag = '🇺🇸';
   bool isLoading = false;
+  Country? selectedCountry;
 
-  // 🔹 Controllers
+  // Controllers
   final TextEditingController businessNameCtrl = TextEditingController();
   final TextEditingController businessAddressCtrl = TextEditingController();
   final TextEditingController firstNameCtrl = TextEditingController();
@@ -29,16 +31,72 @@ class _SignupScreenState extends State<SignupScreen> {
 
   final Map<String, String?> _errors = {};
 
-  final List<Map<String, String>> countries = [
-    {'code': '+1', 'flag': '🇺🇸', 'name': 'United States'},
-    {'code': '+44', 'flag': '🇬🇧', 'name': 'United Kingdom'},
-    {'code': '+92', 'flag': '🇵🇰', 'name': 'Pakistan'},
-    {'code': '+91', 'flag': '🇮🇳', 'name': 'India'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // Default country = US 🇺🇸
+    selectedCountry = Country(
+      phoneCode: '1',
+      countryCode: 'US',
+      e164Sc: 0,
+      geographic: true,
+      level: 1,
+      name: 'United States',
+      example: '',
+      displayName: 'United States',
+      displayNameNoCountryCode: 'United States',
+      e164Key: '',
+    );
+  }
+
+  // 🧭 Business Address API
+  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (query.isEmpty) return [];
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&addressdetails=1&limit=6');
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'ChurppyAdmin/1.0 (admin@churppy.com)',
+    });
+    if (resp.statusCode == 200) {
+      final List data = json.decode(resp.body);
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      return [];
+    }
+  }
+
+  // 📍 Current Location
+  Future<void> useCurrentLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enable location services')),
+      );
+      return;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Location permissions are permanently denied')),
+      );
+      return;
+    }
+
+    Position pos =
+        await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    setState(() {
+      businessAddressCtrl.text = "${pos.latitude},${pos.longitude}";
+    });
+  }
 
   bool _validateInputs() {
     _errors.clear();
-
     if (businessNameCtrl.text.trim().isEmpty) {
       _errors['businessName'] = "Business Name is required";
     }
@@ -64,51 +122,39 @@ class _SignupScreenState extends State<SignupScreen> {
     if (phoneCtrl.text.trim().isEmpty) {
       _errors['phone'] = "Phone number is required";
     }
-
     setState(() {});
     return _errors.isEmpty;
   }
 
   Future<void> _signup() async {
     if (!_validateInputs()) return;
-
     setState(() => isLoading = true);
 
-    final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_signup.php");
+    final url =
+        Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_signup.php");
 
     final requestBody = {
       "firstname": firstNameCtrl.text.trim(),
       "lastname": lastNameCtrl.text.trim(),
-      "user_phone": "$selectedCountryCode${phoneCtrl.text.trim()}",
+      "user_phone":
+          "+${selectedCountry?.phoneCode ?? '1'}${phoneCtrl.text.trim()}",
       "email": emailCtrl.text.trim(),
       "password": passwordCtrl.text.trim(),
       "address": businessAddressCtrl.text.trim(),
-      "business_name": businessNameCtrl.text.trim(), // ✅ Added
+      "business_name": businessNameCtrl.text.trim(),
     };
 
     try {
       final response = await http.post(url, body: requestBody);
-
-      print("🔗 API URL: $url");
-      print("📤 Request Body: $requestBody");
-      print("📥 Status Code: ${response.statusCode}");
-      print("📥 Raw Response: ${response.body}");
-
       final result = json.decode(response.body);
 
       if (result['status'] == 'success') {
         final userId = result['user_id'].toString();
-
-        // ✅ Save user_id (merchant_id) in SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString("merchant_id", userId);
-
-        print("✅ Saved merchant_id in SharedPreferences: $userId");
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("✅ Admin registered successfully!")),
         );
-
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const ChurppyPlansScreen()),
@@ -119,7 +165,6 @@ class _SignupScreenState extends State<SignupScreen> {
         );
       }
     } catch (e) {
-      print("⚠️ Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to connect: $e")),
       );
@@ -132,7 +177,6 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final maxCardW = w.clamp(320.0, 440.0);
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -163,33 +207,100 @@ class _SignupScreenState extends State<SignupScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _field("Business Name", businessNameCtrl, error: _errors['businessName']),
-                            _field("Business Address", businessAddressCtrl, error: _errors['address']),
-                            _field("First Name", firstNameCtrl, error: _errors['firstName']),
-                            _field("Last Name", lastNameCtrl, error: _errors['lastName']),
+                            _field("Business Name", businessNameCtrl,
+                                error: _errors['businessName']),
+
+                            // 🏠 Business Address with API
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: TypeAheadField<Map<String, dynamic>>(
+                                controller: businessAddressCtrl,
+                                suggestionsCallback: fetchSuggestions,
+                                builder: (context, controller, focusNode) {
+                                  return TextField(
+                                    controller: controller,
+                                    focusNode: focusNode,
+                                    decoration: InputDecoration(
+                                      hintText: 'Business Address',
+                                      errorText: _errors['address'],
+                                      suffixIcon: IconButton(
+                                        icon: const Icon(Icons.my_location),
+                                        onPressed: useCurrentLocation,
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 14, vertical: 12),
+                                    ),
+                                  );
+                                },
+                                itemBuilder: (context, suggestion) {
+                                  final addr = suggestion['address'] ?? {};
+                                  final sub = [
+                                    addr['road'],
+                                    addr['suburb'],
+                                    addr['city'],
+                                    addr['state'],
+                                    addr['country']
+                                  ].where((e) => e != null).join(", ");
+                                  return ListTile(
+                                    title: Text(
+                                        suggestion['display_name'] ?? 'Unknown'),
+                                    subtitle: Text(sub),
+                                  );
+                                },
+                                onSelected: (suggestion) {
+                                  setState(() {
+                                    businessAddressCtrl.text =
+                                        suggestion['display_name'] ?? '';
+                                  });
+                                },
+                              ),
+                            ),
+
+                            _field("First Name", firstNameCtrl,
+                                error: _errors['firstName']),
+                            _field("Last Name", lastNameCtrl,
+                                error: _errors['lastName']),
                             _field("Email", emailCtrl, error: _errors['email']),
-                            _field("Password", passwordCtrl, obscure: true, error: _errors['password']),
+                            _field("Password", passwordCtrl,
+                                obscure: true, error: _errors['password']),
+
                             const Text(
                               'Enter your mobile number',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(height: 8),
+
+                            // 📱 Country Picker integrated
                             Row(
                               children: [
                                 InkWell(
                                   onTap: () => _showCountryPicker(context),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 12),
                                     decoration: BoxDecoration(
-                                      border: Border.all(color: Color(0xFFBDBDBD)),
+                                      border:
+                                          Border.all(color: Color(0xFFBDBDBD)),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Row(
                                       children: [
-                                        Text(selectedFlag, style: const TextStyle(fontSize: 18)),
+                                        Text(selectedCountry?.flagEmoji ?? '🌎',
+                                            style:
+                                                const TextStyle(fontSize: 20)),
                                         const SizedBox(width: 6),
-                                        Text(selectedCountryCode),
-                                        const Icon(Icons.arrow_drop_down, size: 20),
+                                        Text(
+                                          '+${selectedCountry?.phoneCode ?? ''}',
+                                          style:
+                                              const TextStyle(fontSize: 14),
+                                        ),
+                                        const Icon(Icons.arrow_drop_down,
+                                            size: 20),
                                       ],
                                     ),
                                   ),
@@ -203,9 +314,11 @@ class _SignupScreenState extends State<SignupScreen> {
                                       hintText: 'Phone Number',
                                       errorText: _errors['phone'],
                                       border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                          borderRadius:
+                                              BorderRadius.circular(6)),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 14, vertical: 12),
                                     ),
                                   ),
                                 ),
@@ -215,6 +328,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                       ),
                     ),
+
+                    // Continue + login link (unchanged)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                       child: Column(
@@ -225,18 +340,19 @@ class _SignupScreenState extends State<SignupScreen> {
                             child: FilledButton(
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF804692),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
                               ),
                               onPressed: isLoading ? null : _signup,
                               child: isLoading
                                   ? const SizedBox(
-                                height: 22,
-                                width: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
+                                      height: 22,
+                                      width: 22,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
                                   : const Text('Continue'),
                             ),
                           ),
@@ -246,7 +362,9 @@ class _SignupScreenState extends State<SignupScreen> {
                               Expanded(child: Divider(color: Colors.grey)),
                               Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 8),
-                                child: Text('or', style: TextStyle(color: Colors.black54)),
+                                child: Text('or',
+                                    style:
+                                        TextStyle(color: Colors.black54)),
                               ),
                               Expanded(child: Divider(color: Colors.grey)),
                             ],
@@ -254,7 +372,8 @@ class _SignupScreenState extends State<SignupScreen> {
                           const SizedBox(height: 10),
                           Center(
                             child: GestureDetector(
-                              onTap: () => Navigator.pushReplacementNamed(context, Routes.login),
+                              onTap: () => Navigator.pushReplacementNamed(
+                                  context, Routes.login),
                               child: const Text.rich(
                                 TextSpan(
                                   text: 'If you already have an account, ',
@@ -264,7 +383,8 @@ class _SignupScreenState extends State<SignupScreen> {
                                       text: 'login.',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
-                                        decoration: TextDecoration.underline,
+                                        decoration:
+                                            TextDecoration.underline,
                                       ),
                                     ),
                                   ],
@@ -280,29 +400,25 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
               ),
             ),
-           Positioned(
-  left: 10,
-  bottom: 42,
-  child: InkWell(
-    onTap: () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()), 
-      );
-    },
-    borderRadius: BorderRadius.circular(100),
-    child: Container(
-      width: 36,
-      height: 36,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: Color(0xFFE0E0E0),
-      ),
-      child: const Icon(Icons.arrow_back, size: 20),
-    ),
-  ),
-),
-
+            Positioned(
+              left: 10,
+              bottom: 42,
+              child: InkWell(
+                onTap: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => LoginScreen())),
+                borderRadius: BorderRadius.circular(100),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFE0E0E0),
+                  ),
+                  child: const Icon(Icons.arrow_back, size: 20),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -320,32 +436,21 @@ class _SignupScreenState extends State<SignupScreen> {
           hintText: hint,
           errorText: error,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       ),
     );
   }
 
   void _showCountryPicker(BuildContext context) {
-    showModalBottomSheet(
+    showCountryPicker(
       context: context,
-      builder: (context) {
-        return ListView(
-          shrinkWrap: true,
-          children: countries.map((country) {
-            return ListTile(
-              leading: Text(country['flag']!, style: const TextStyle(fontSize: 20)),
-              title: Text('${country['name']} (${country['code']})'),
-              onTap: () {
-                setState(() {
-                  selectedCountryCode = country['code']!;
-                  selectedFlag = country['flag']!;
-                });
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-        );
+      showPhoneCode: true,
+      onSelect: (Country country) {
+        setState(() {
+          selectedCountry = country;
+        });
       },
     );
   }

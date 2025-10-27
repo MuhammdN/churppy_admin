@@ -1,3 +1,5 @@
+import 'package:churppy_admin/screens/contactUsScreen.dart';
+import 'package:churppy_admin/screens/location.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -98,27 +100,62 @@ class ChurppyDrawer extends StatelessWidget {
                       _showLogoutDialog(context);
                     }),
 
-                    SizedBox(height: screenH * 0.03),
+                    SizedBox(height: screenH * 0.06),
 
                     // 🔹 Contact + Footer texts
                     Center(
                       child: Column(
                         children: [
-                          Text("Contact us",
-                              style: GoogleFonts.inter(
-                                  color: Colors.white, fontSize: 14)),
-                          const SizedBox(height: 8),
-                          Text("Create Churppy Alerts In Just 4 Steps",
-                              style: GoogleFonts.inter(
-                                  color: Colors.white, fontSize: 14)),
-                          SizedBox(height: screenH * 0.08),
+                          InkWell(
+    onTap: () {
+      // Navigate to Contact Us / Feedback screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ContactUsScreen()),
+      );
+    },
+    child: Text(
+      "Contact Us or Submit feedback.",
+      style: GoogleFonts.inter(
+        color: Colors.white,
+        fontSize: 14,
+      ),
+    ),
+  ),
+
+  const SizedBox(height: 30),
+
+  InkWell(
+    onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => LocationAlertStep2Screen(
+        alertTitle: "CUSTOMIZE ALERTS",
+        alertDescription: "Customize Alerts request", 
+        alertType: "custom",
+      ),
+    ),
+  );
+},
+    child: Text(
+      "Create Churppy Alerts In Just 4 Steps",
+      style: GoogleFonts.inter(
+        color: Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  ),
+
+  SizedBox(height: screenH * 0.09),
                           Text("Thank You For Choosing Churppy!",
                               textAlign: TextAlign.center,
                               style: GoogleFonts.inter(
                                   color: Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500)),
-                          const SizedBox(height: 30),
+                          const SizedBox(height: 12),
                           Text("We Appreciate Your Business",
                               textAlign: TextAlign.center,
                               style: GoogleFonts.inter(
@@ -126,12 +163,8 @@ class ChurppyDrawer extends StatelessWidget {
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                   fontStyle: FontStyle.italic)),
-                          SizedBox(height: screenH * 0.15),
-                          Text("Submit Feedback",
-                              style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700)),
+                         
+                         
                         ],
                       ),
                     ),

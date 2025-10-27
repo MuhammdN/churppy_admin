@@ -9,44 +9,23 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
-    final screenH = MediaQuery.of(context).size.height;
 
     return Scaffold(
       body: Container(
         width: double.infinity,
         height: double.infinity,
+
+        /// ✅ Responsive background image
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment(-0.85, -0.55),
-            end: Alignment(0.90, 0.65),
-            colors: [
-              Color(0xFF8FC245),
-              Color(0xFFB7D78A),
-              Color(0xFFC3CFB2),
-            ],
-            stops: [0.08, 0.42, 0.96],
+          image: DecorationImage(
+            image: AssetImage('assets/images/background.png'),
+            fit: BoxFit.cover, // ensures background fills all screen sizes
           ),
         ),
-        child: Stack(
-          children: [
-            // Soft white radial highlight
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(0.0, -0.55),
-                      radius: 0.9,
-                      colors: [
-                        Colors.white12,
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
 
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
             // Business Account image (top)
             Align(
               alignment: const Alignment(0, -0.80),
@@ -62,24 +41,24 @@ class SplashScreen extends StatelessWidget {
               child: Image.asset(
                 'assets/images/bell_churppy.png',
                 width: screenW * 0.28,
-
               ),
             ),
 
-            // CHURPPY logo
-            Align(
-              alignment: const Alignment(0, 0.0),
-              child: Image.asset(
-                'assets/images/logo.png',
-                width: screenW * 0.62,
-              ),
-            ),
+ Center(
+  child: Image.asset(
+    'assets/images/logo.png',
+    width: screenW * 0.7, // 90% of screen width
+    fit: BoxFit.contain,  // keeps proper aspect ratio
+  ),
+),
+
 
             // GO Button (image)
             Align(
               alignment: const Alignment(0.90, 0.30),
               child: GestureDetector(
-                onTap: () => Navigator.pushReplacementNamed(context, Routes.login),
+                onTap: () =>
+                    Navigator.pushReplacementNamed(context, Routes.login),
                 child: Image.asset(
                   'assets/images/go_button.png',
                   width: screenW * 0.36,
@@ -87,23 +66,22 @@ class SplashScreen extends StatelessWidget {
               ),
             ),
 
-
-
-      
+            // ✅ Centered bottom text (always in center)
             Positioned(
               bottom: 18,
-              left: screenW * 0.17, // adjust spacing
+              left: 0,
+              right: 0, // 👈 centers it automatically
               child: Text(
                 "Churppy\nTrademark and Patent pending",
-                textAlign: TextAlign.center, // 👈 center align
-                style: GoogleFonts.inter(   // 👈 Inter font applied
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
                   color: Colors.black,
                   fontSize: 17,
                   fontWeight: FontWeight.w400,
+                  height: 1.3,
                 ),
               ),
             ),
-
           ],
         ),
       ),

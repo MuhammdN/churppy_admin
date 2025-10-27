@@ -46,7 +46,7 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
         builder: (_) => LocationAlertStep2Screen(
           alertTitle: selectedTitle,
           alertDescription: selectedText,
-          alertType: alertType, // ✅ pass ho gaya
+          alertType: alertType,
         ),
       ),
     );
@@ -184,35 +184,47 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
                           titleColor: Colors.red,
                         ),
 
-                        /// Customize Option
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Radio<int>(
-                            value: 3,
-                            groupValue: _selectedOption,
-                            onChanged: (val) {
-                              setState(() => _selectedOption = val!);
-                            },
-                          ),
-                          title: Text(
-                            _alertTitles[3]!,
-                            style: GoogleFonts.roboto(
-                              fontSize: 14,
-                              color: Colors.purple,
-                              fontWeight: FontWeight.bold,
+                        // ✅ Customize Option (same behavior)
+                        GestureDetector(
+                          onTap: () => setState(() => _selectedOption = 3),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: _selectedOption == 3
+                                  ? Colors.grey.shade100
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              _sampleTexts[3]!,
-                              style: GoogleFonts.roboto(
-                                fontSize: 13,
-                                color: Colors.black87,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Radio<int>(
+                                value: 3,
+                                groupValue: _selectedOption,
+                                onChanged: (val) {
+                                  setState(() => _selectedOption = val!);
+                                },
+                              ),
+                              title: Text(
+                                _alertTitles[3]!,
+                                style: GoogleFonts.roboto(
+                                  fontSize: 14,
+                                  color: Colors.purple,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                  _sampleTexts[3]!,
+                                  style: GoogleFonts.roboto(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                        const Divider(),
                         const SizedBox(height: 20),
 
                         /// 🔰 Connect For Help Button
@@ -247,6 +259,7 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     );
   }
 
+  /// ✅ Unified option builder with tap area selecting radio
   Widget _buildOption(
     int value,
     String title,
@@ -254,54 +267,65 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     String sample, {
     Color? titleColor,
   }) {
-    return Column(
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Radio<int>(
-            value: value,
-            groupValue: _selectedOption,
-            onChanged: (val) {
-              setState(() => _selectedOption = val!);
-            },
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: GoogleFonts.roboto(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: titleColor ?? Colors.black,
-                ),
-              ),
-              if (description.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  description,
-                  style: GoogleFonts.roboto(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black,
-                  ),
-                ),
-              ],
-              if (sample.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  sample,
-                  style: GoogleFonts.roboto(
-                    fontSize: 13,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ],
-          ),
+    return GestureDetector(
+      onTap: () => setState(() => _selectedOption = value), // 👈 tap anywhere
+      child: Container(
+        decoration: BoxDecoration(
+          color: _selectedOption == value
+              ? Colors.grey.shade100
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
         ),
-        const Divider(),
-      ],
+        child: Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Radio<int>(
+                value: value,
+                groupValue: _selectedOption,
+                onChanged: (val) {
+                  setState(() => _selectedOption = val!);
+                },
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.roboto(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: titleColor ?? Colors.black,
+                    ),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                  if (sample.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      sample,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(),
+          ],
+        ),
+      ),
     );
   }
 }

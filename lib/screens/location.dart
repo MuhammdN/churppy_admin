@@ -149,6 +149,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
 
   String? userId;
   String? imageName;
+  String? _existingImageUrl; // 🔰 NEW: Store existing image URL from database
   File? _pickedImage;
   final ImagePicker _picker = ImagePicker();
 
@@ -197,9 +198,16 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                     userData['image'].toString().isNotEmpty
                 ? userData['image'].toString().split('/').last
                 : null;
+            
+            // 🔰 NEW: Store the complete image URL for preview
+            _existingImageUrl = userData['image'] != null &&
+                    userData['image'].toString().isNotEmpty
+                ? userData['image'].toString()
+                : null;
           });
 
           debugPrint("🖼️ Current Image (from DB): $imageName");
+          debugPrint("🖼️ Existing Image URL: $_existingImageUrl");
         }
       }
     } catch (e) {
@@ -229,6 +237,12 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
 
       if (jsonResp['status'] == 'success') {
         debugPrint("✅ Image uploaded successfully!");
+        // 🔰 Update existing image URL after successful upload
+        if (jsonResp['data'] != null && jsonResp['data']['image'] != null) {
+          setState(() {
+            _existingImageUrl = jsonResp['data']['image'];
+          });
+        }
       } else {
         debugPrint("❌ Image upload failed: ${jsonResp['message']}");
       }
@@ -636,6 +650,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                             ),
                             const SizedBox(height: 16),
 
+                            // =================== IMAGE UPLOAD SECTION ===================
                             Text("IMAGE",
                                 style: GoogleFonts.roboto(
                                     fontSize: 13, fontWeight: FontWeight.bold)),
@@ -649,19 +664,18 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                       height: 45,
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
-                                        color: _isImageUploading 
-                                            ? Colors.grey.shade400 
+                                        color: _isImageUploading
+                                            ? Colors.grey.shade400
                                             : Colors.grey.shade200,
-                                        border:
-                                            Border.all(color: Colors.grey.shade400),
+                                        border: Border.all(color: Colors.grey.shade400),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
                                         imageName ?? "No file selected",
                                         style: GoogleFonts.inter(
                                           fontSize: 12,
-                                          color: _isImageUploading 
-                                              ? Colors.grey.shade600 
+                                          color: _isImageUploading
+                                              ? Colors.grey.shade600
                                               : Colors.black,
                                         ),
                                         overflow: TextOverflow.ellipsis,
@@ -677,11 +691,10 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                       height: 45,
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
-                                        color: _isImageUploading 
-                                            ? Colors.grey.shade400 
+                                        color: _isImageUploading
+                                            ? Colors.grey.shade400
                                             : Colors.grey.shade200,
-                                        border:
-                                            Border.all(color: Colors.grey.shade400),
+                                        border: Border.all(color: Colors.grey.shade400),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: _isImageUploading
@@ -690,7 +703,8 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                               height: 20,
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2,
-                                                valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<Color>(Colors.black),
                                               ),
                                             )
                                           : const Text("Upload"),
@@ -699,6 +713,92 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                 ),
                               ],
                             ),
+
+                            // ✅ Responsive image preview card - Show both existing and newly uploaded images
+                            if (_existingImageUrl != null || _pickedImage != null) ...[
+                              const SizedBox(height: 16),
+                              Card(
+                                elevation: 4,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        "Image Preview",
+                                        style: GoogleFonts.roboto(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      
+                                      // 🔰 Show newly picked image if available, otherwise show existing image from database
+                                      if (_pickedImage != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: Image.file(
+                                            _pickedImage!,
+                                            width: MediaQuery.of(context).size.width * 0.8,
+                                            fit: BoxFit.contain,
+                                          ),
+                                        )
+                                      else if (_existingImageUrl != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: Image.network(
+                                            _existingImageUrl!,
+                                            width: MediaQuery.of(context).size.width * 0.8,
+                                            fit: BoxFit.contain,
+                                            loadingBuilder: (context, child, loadingProgress) {
+                                              if (loadingProgress == null) return child;
+                                              return Container(
+                                                width: MediaQuery.of(context).size.width * 0.8,
+                                                height: 200,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(
+                                                    value: loadingProgress.expectedTotalBytes != null
+                                                        ? loadingProgress.cumulativeBytesLoaded /
+                                                            loadingProgress.expectedTotalBytes!
+                                                        : null,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Container(
+                                                width: MediaQuery.of(context).size.width * 0.8,
+                                                height: 200,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey.shade200,
+                                                  borderRadius: BorderRadius.circular(10),
+                                                ),
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(Icons.error_outline, color: Colors.red, size: 40),
+                                                    SizedBox(height: 8),
+                                                    Text(
+                                                      'Failed to load image',
+                                                      style: GoogleFonts.roboto(
+                                                        fontSize: 12,
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
 
                             const SizedBox(height: 20),
                             Center(
@@ -731,6 +831,24 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                         ),
                       ),
                     ),
+
+                    /// 🔰 NEW: Back Arrow Section (Exactly like Drawer)
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.only(left: 16, top: 10, bottom: 16),
+                      width: double.infinity,
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.grey[300],
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_back, color: Colors.black),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -751,7 +869,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    _isImageUploading ? "" : "",
+                    _isImageUploading ? "Uploading Image..." : "Loading...",
                     style: GoogleFonts.roboto(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
