@@ -3,13 +3,81 @@ import 'package:churppy_admin/screens/location.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 import 'dashboard_screen.dart';
 import 'login.dart';
 import 'orders_history_screen.dart';
-// pakistan
-class ChurppyDrawer extends StatelessWidget {
+
+class ChurppyDrawer extends StatefulWidget {
   const ChurppyDrawer({super.key});
+
+  @override
+  State<ChurppyDrawer> createState() => _ChurppyDrawerState();
+}
+
+class _ChurppyDrawerState extends State<ChurppyDrawer> {
+  // ✅ ADDED FOR PROFILE IMAGE
+  String? userId;
+  String? profileImage;
+  String? firstName;
+  String? lastName;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserId();
+  }
+
+  /// ✅ Load user_id then fetch profile
+  Future<void> _loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString("user_id");
+
+    debugPrint("✅ Logged-in User ID (Drawer): $savedUserId");
+
+    setState(() {
+      userId = savedUserId;
+    });
+
+    if (savedUserId != null) {
+      await _fetchUserProfile(savedUserId);
+    }
+    
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  /// ✅ Fetch User Profile
+  Future<void> _fetchUserProfile(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+
+    try {
+      final res = await http.get(url);
+      debugPrint("📥 Profile Response (Drawer): ${res.body}");
+
+      if (res.statusCode == 200) {
+        final result = jsonDecode(res.body);
+
+        if (result["status"] == "success") {
+          final data = result["data"];
+
+          setState(() {
+            profileImage = data["image"];     // ✅ full URL already
+            firstName = data["first_name"];
+            lastName = data["last_name"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Profile Fetch Error (Drawer): $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +128,55 @@ class ChurppyDrawer extends StatelessWidget {
                               ],
                             ),
                           ),
-                          ClipOval(
-                            child: Image.asset(
-                              'assets/images/truck.png',
-                              width: screenW * 0.18,
-                              height: screenW * 0.18,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+                          
+                          /// ✅ PROFILE IMAGE INSTEAD OF TRUCK ICON
+                          _isLoading 
+                              ? CircularProgressIndicator()
+                              : GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                                    );
+                                  },
+                                  child: profileImage != null
+                                      ? ClipOval(
+                                          child: Image.network(
+                                            profileImage!,
+                                            width: screenW * 0.1,
+                                            height: screenW * 0.1,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, o, s) {
+                                              return Container(
+                                                width: screenW * 0.18,
+                                                height: screenW * 0.18,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey[300],
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: Icon(
+                                                  Icons.person,
+                                                  size: screenW * 0.1,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        )
+                                      : Container(
+                                          width: screenW * 0.18,
+                                          height: screenW * 0.18,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[300],
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.person,
+                                            size: screenW * 0.1,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                ),
                         ],
                       ),
                     ),
@@ -107,48 +216,48 @@ class ChurppyDrawer extends StatelessWidget {
                       child: Column(
                         children: [
                           InkWell(
-    onTap: () {
-      // Navigate to Contact Us / Feedback screen
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const ContactUsScreen()),
-      );
-    },
-    child: Text(
-      "Contact Us or Submit feedback.",
-      style: GoogleFonts.inter(
-        color: Colors.white,
-        fontSize: 14,
-      ),
-    ),
-  ),
+                            onTap: () {
+                              // Navigate to Contact Us / Feedback screen
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const ContactUsScreen()),
+                              );
+                            },
+                            child: Text(
+                              "Contact Us or Submit feedback.",
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
 
-  const SizedBox(height: 30),
+                          const SizedBox(height: 30),
 
-  InkWell(
-    onTap: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => LocationAlertStep2Screen(
-        alertTitle: "CUSTOMIZE ALERTS",
-        alertDescription: "Customize Alerts request", 
-        alertType: "custom",
-      ),
-    ),
-  );
-},
-    child: Text(
-      "Create Churppy Alerts In Just 4 Steps",
-      style: GoogleFonts.inter(
-        color: Colors.white,
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  ),
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => LocationAlertStep2Screen(
+                                    alertTitle: "CUSTOMIZE ALERTS",
+                                    alertDescription: "Customize Alerts request", 
+                                    alertType: "custom",
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Text(
+                              "Create Churppy Alerts In Just 4 Steps",
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
 
-  SizedBox(height: screenH * 0.09),
+                          SizedBox(height: screenH * 0.09),
                           Text("Thank You For Choosing Churppy!",
                               textAlign: TextAlign.center,
                               style: GoogleFonts.inter(
@@ -163,8 +272,6 @@ class ChurppyDrawer extends StatelessWidget {
                                   fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                   fontStyle: FontStyle.italic)),
-                         
-                         
                         ],
                       ),
                     ),
@@ -212,7 +319,7 @@ class ChurppyDrawer extends StatelessWidget {
   }
 
   /// 🔔 Logout confirmation dialog
-  static void _showLogoutDialog(BuildContext context) {
+  void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

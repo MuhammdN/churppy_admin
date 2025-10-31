@@ -664,17 +664,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   Widget _buildContactMethods(double Function(double) fs, double Function(double) hp) {
     return Column(
       children: [
-        _buildContactMethod(
-          Icons.phone,
-          "+1 (555) 123-4567",
-          fs,
-        ),
-        SizedBox(height: hp(1)),
-        _buildContactMethod(
-          Icons.email,
-          "support@churppy.com",
-          fs,
-        ),
+        
         SizedBox(height: hp(1)),
         _buildContactMethod(
           Icons.access_time,

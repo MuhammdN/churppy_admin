@@ -141,7 +141,7 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     debugPrint("✅ Data received: "
         "${widget.alert.title}, ${widget.alert.description}, ${widget.alert.location}, "
         "Radius: ${widget.alert.radius}, Image: ${widget.alert.imageName}, "
-        "AlertType: ${widget.alert.alertType}");
+        "AlertType: ${widget.alert.alertType}, Discount: ${widget.alert.discount}");
   }
 
   String formatDate(String rawDate) {
@@ -324,6 +324,87 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     }
   }
 
+  /// ✅ Check if this is a Last Minute Deal
+  bool get _isLastMinuteDeal {
+    return widget.alert.title.contains("LAST MINUTE DEALS") || 
+           widget.alert.alertType == "last_minute";
+  }
+
+  /// ✅ Check if this is a Churppy Chain Alert
+  bool get _isChainAlert {
+    return widget.alert.title.contains("CHURPPY CHAIN ALERT") || 
+           widget.alert.alertType == "chain";
+  }
+
+  /// ✅ Check if this is a Location Alert
+  bool get _isLocationAlert {
+    return widget.alert.title.contains("LOCATION ALERT") || 
+           widget.alert.alertType == "location";
+  }
+
+  /// ✅ Check if this is a Custom Alert
+  bool get _isCustomAlert {
+    return widget.alert.title.contains("CUSTOMIZE ALERTS") || 
+           widget.alert.alertType == "custom";
+  }
+
+  /// ✅ Check if discount is valid (not "0")
+  bool get _hasValidDiscount {
+    return widget.alert.discount != "0" && 
+           widget.alert.discount.isNotEmpty;
+  }
+
+  /// ✅ Get appropriate description based on alert type
+  String get _alertDescription {
+    if (_isChainAlert) {
+      return "Someone in your area just ordered from ${businessName.isNotEmpty ? businessName : "this business"}. Place your own order now!";
+    } else if (_isLastMinuteDeal) {
+      if (_hasValidDiscount) {
+        return "We Cooked Too Much! Stop By ${businessName.isNotEmpty ? businessName : "our location"} by ${formatTime(widget.alert.endTime)} tonight and receive ${widget.alert.discount}!!";
+      } else {
+        return "We Cooked Too Much! Stop By ${businessName.isNotEmpty ? businessName : "our location"} by ${formatTime(widget.alert.endTime)} tonight for special deals!";
+      }
+    } else if (_isLocationAlert) {
+      return "${businessName.isNotEmpty ? businessName : "We"} will be located at ${_isFetchingLocation ? "selected location" : _locationName} on ${formatDate(widget.alert.startDate)} from ${formatTime(widget.alert.startTime)} to ${formatTime(widget.alert.endTime)}. Look Forward to Seeing You!";
+    } else if (_isCustomAlert) {
+      return widget.alert.description.isNotEmpty 
+          ? widget.alert.description 
+          : "Custom alert message from ${businessName.isNotEmpty ? businessName : "our business"}.";
+    } else {
+      // Default description
+      return widget.alert.description.isNotEmpty 
+          ? widget.alert.description 
+          : "${businessName.isNotEmpty ? businessName : "We"} will be at ${_isFetchingLocation ? "selected location" : _locationName} on ${formatDate(widget.alert.startDate)} from ${formatTime(widget.alert.startTime)} to ${formatTime(widget.alert.endTime)}.";
+    }
+  }
+
+  /// ✅ Get appropriate icon based on alert type
+  IconData get _alertIcon {
+    if (_isChainAlert) return Icons.link_rounded;
+    if (_isLastMinuteDeal) return Icons.flash_on_rounded;
+    if (_isLocationAlert) return Icons.location_on_rounded;
+    if (_isCustomAlert) return Icons.edit_rounded;
+    return Icons.notifications_rounded;
+  }
+
+  /// ✅ Get appropriate icon color based on alert type
+  Color get _alertIconColor {
+    if (_isChainAlert) return Colors.blue.shade700;
+    if (_isLastMinuteDeal) return Colors.orange.shade700;
+    if (_isLocationAlert) return Colors.green.shade700;
+    if (_isCustomAlert) return Colors.purple.shade700;
+    return Colors.grey.shade700;
+  }
+
+  /// ✅ Get appropriate background color based on alert type
+  Color get _alertBackgroundColor {
+    if (_isChainAlert) return Colors.blue.shade50;
+    if (_isLastMinuteDeal) return Colors.orange.shade50;
+    if (_isLocationAlert) return Colors.green.shade50;
+    if (_isCustomAlert) return Colors.purple.shade50;
+    return Colors.grey.shade50;
+  }
+
   /// ✅ Send Alert API call
   Future<void> _sendAlert({required int status}) async {
     if (userId == null) {
@@ -334,8 +415,7 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     }
 
     // We prefer the DB business name; if missing, we fallback to previous title
-    final titleToSave =
-        businessName.isNotEmpty ? businessName : widget.alert.title;
+    final titleToSave = businessName.isNotEmpty ? businessName : widget.alert.title;
 
     setState(() => _isLoading = true);
 
@@ -344,18 +424,21 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
           "https://churppy.eurekawebsolutions.com/api/admin_add_alert.php");
       final request = http.MultipartRequest('POST', uri);
 
+      // ✅ UPDATED: Added location_name field for backend
       request.fields.addAll({
         'merchant_id': userId!,
         'title': titleToSave, // ✅ Save BUSINESS NAME instead of alert title
         'description': widget.alert.description,
-        'location': widget.alert.location, // 🔰 Original coordinates remain in DB
+        'location': widget.alert.location, // 🔰 Original coordinates
+        'location_name': _locationName, // 🔰 NEW: Derived location name
         'start_date': widget.alert.startDate,
         'expiry_date': widget.alert.expiryDate,
         'start_time': widget.alert.startTime,
         'end_time': widget.alert.endTime,
         'radius': widget.alert.radius.toString(),
-        'status': status.toString(),
+        'status': status.toString(), // ✅ 1=Approve, 0=Save for Later
         'alert_type': widget.alert.alertType,
+        'discount': widget.alert.discount, // ✅ Send discount to API
       });
 
       // ✅ Image Handling (file vs existing filename)
@@ -389,6 +472,12 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
         if (statusStr == 'success') {
           final remain = jsonData['remaining'];
           final max = jsonData['max_limit'];
+          final alertStatus = jsonData['status'] ?? status;
+
+          // ✅ UPDATED: Different success messages based on status
+          final successMessage = status == 1 
+              ? "Alert created and activated successfully!" 
+              : "Alert saved as draft successfully!";
 
           showDialog(
             context: context,
@@ -412,33 +501,28 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // ✅ UPDATED: Different icon based on status
                     Container(
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        color: Colors.green.shade50,
+                        color: status == 1 ? Colors.green.shade50 : Colors.blue.shade50,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.green.shade200, width: 3),
+                        border: Border.all(
+                          color: status == 1 ? Colors.green.shade200 : Colors.blue.shade200, 
+                          width: 3
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        color: Color(0xFF8BC34A),
+                      child: Icon(
+                        status == 1 ? Icons.check_rounded : Icons.save_rounded,
+                        color: status == 1 ? Color(0xFF8BC34A) : Colors.blue.shade600,
                         size: 40,
                       ),
                     ),
                     const SizedBox(height: 20),
+                   
                     Text(
-                      "Alert Created Successfully!",
-                      style: GoogleFonts.roboto(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF8BC34A),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      "Your alert has been created and is now active.",
+                      successMessage,
                       style: GoogleFonts.roboto(
                         fontSize: 14,
                         color: Colors.grey.shade600,
@@ -446,58 +530,74 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.purple, width: 1.5),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            "Remaining Alerts",
-                            style: GoogleFonts.roboto(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.purple,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "$remain",
-                                style: GoogleFonts.roboto(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.purple,
-                                ),
-                              ),
-                              Text(
-                                " / $max",
-                                style: GoogleFonts.roboto(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.purple,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                    
+                    // ✅ Only show remaining alerts for APPROVED alerts
+                   // ✅ Show remaining alerts for both APPROVE (1) and SAVE FOR LATER (0)
+if ((status == 1 || status == 0) && remain != null && max != null)
+  Column(
+    children: [
+      const SizedBox(height: 24),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.purple, width: 1.5),
+        ),
+        child: Column(
+          children: [
+            Text(
+              "Remaining Alerts",
+              style: GoogleFonts.roboto(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.purple,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "$remain",
+                  style: GoogleFonts.roboto(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple,
+                  ),
+                ),
+                Text(
+                  " / $max",
+                  style: GoogleFonts.roboto(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.purple,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
+
+                    
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () {
+                          Navigator.pop(context); // Close dialog
+                          // Optional: Navigate back or reset
+                          if (mounted) {
+                            Navigator.pop(context); // Go back to previous screen
+                          }
+                        },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF8BC34A),
+                          backgroundColor: status == 1 ? Color(0xFF8BC34A) : Colors.blue.shade600,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -538,20 +638,26 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
               ),
             );
 
-            // ✅ Navigate to PaymentScreen and FORCE create alert
-            Future.delayed(const Duration(milliseconds: 600), () {
-              if (mounted) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PaymentScreen(
-                      alert: widget.alert,
-                      key: const ValueKey("force_create_alert"),
-                    ),
-                  ),
-                );
-              }
-            });
+            // ✅ Navigate to PaymentScreen and FORCE create alert (only for Approve)
+           // ✅ Navigate to PaymentScreen and FORCE create alert (for Approve or Save for Later)
+if (status == 1 || status == 0) {
+  Future.delayed(const Duration(milliseconds: 600), () {
+    if (mounted) {
+      Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(
+    builder: (_) => PaymentScreen(
+      alert: widget.alert,
+      status: status, // ✅ Pass status (1 or 0)
+      key: const ValueKey("force_create_alert"),
+    ),
+  ),
+);
+
+    }
+  });
+}
+
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -653,50 +759,238 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
 
                             const SizedBox(height: 15),
 
+                            // ✅ NEW: Discount Display Card (Only for Last Minute Deals with valid discount)
+                            if (_isLastMinuteDeal && _hasValidDiscount)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.orange.shade50,
+                                        Colors.red.shade50,
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                      width: 2,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.orange.withOpacity(0.1),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade100,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.local_offer_rounded,
+                                          color: Colors.orange.shade700,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'SPECIAL OFFER',
+                                              style: GoogleFonts.roboto(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.orange.shade700,
+                                                letterSpacing: 1.0,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              widget.alert.discount,
+                                              style: GoogleFonts.roboto(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red.shade700,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Last Minute Deal',
+                                              style: GoogleFonts.roboto(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                            if (_isLastMinuteDeal && _hasValidDiscount)
+                              const SizedBox(height: 16),
+
+                            // ✅ UPDATED: Alert Details Card with dynamic content based on alert type
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
                               child: Container(
-                                padding: const EdgeInsets.all(10),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.black26),
-                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: _alertBackgroundColor,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.1),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    // Alert Type Header
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: Image.network(
-                                            _abs(widget.alert.imageName),
-                                            width: 70,
-                                            height: 70,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Icon(Icons.image_not_supported),
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: _alertIconColor.withOpacity(0.1),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            _alertIcon,
+                                            color: _alertIconColor,
+                                            size: 20,
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            "${businessName.isNotEmpty ? businessName : "Loading..."} will be located at ${_isFetchingLocation ? "Loading location..." : _locationName} "
-                                            "on ${formatDate(widget.alert.startDate)} from ${formatTime(widget.alert.startTime)} "
-                                            "to ${formatTime(widget.alert.endTime)}.",
-                                            style: const TextStyle(fontSize: 12),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _getAlertTypeTitle(),
+                                          style: GoogleFonts.roboto(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: _alertIconColor,
                                           ),
                                         ),
                                       ],
                                     ),
+                                    const SizedBox(height: 12),
+
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 80,
+                                          height: 80,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.grey.shade200),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Image.network(
+                                              _abs(widget.alert.imageName),
+                                              width: 70,
+                                              height: 70,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Container(
+                                                color: Colors.grey.shade100,
+                                                child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                businessName.isNotEmpty ? businessName : "Loading...",
+                                                style: GoogleFonts.roboto(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                _alertDescription,
+                                                style: GoogleFonts.roboto(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade700,
+                                                  height: 1.4,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              if (_isLocationAlert || _isLastMinuteDeal || _isCustomAlert)
+                                                Row(
+                                                  children: [
+                                                    Icon(Icons.location_on, size: 12, color: Colors.grey.shade600),
+                                                    const SizedBox(width: 4),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _isFetchingLocation ? "Loading location..." : _locationName,
+                                                        style: GoogleFonts.roboto(
+                                                          fontSize: 11,
+                                                          color: Colors.grey.shade600,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              if (_isLocationAlert || _isLastMinuteDeal || _isCustomAlert)
+                                                const SizedBox(height: 4),
+                                              if (_isLocationAlert || _isLastMinuteDeal || _isCustomAlert)
+                                                Row(
+                                                  children: [
+                                                    Icon(Icons.access_time, size: 12, color: Colors.grey.shade600),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      "${formatDate(widget.alert.startDate)} • ${formatTime(widget.alert.startTime)} - ${formatTime(widget.alert.endTime)}",
+                                                      style: GoogleFonts.roboto(
+                                                        fontSize: 11,
+                                                        color: Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
                                     Align(
                                       alignment: Alignment.centerRight,
-                                      child: Text(
-                                        _timeRemaining,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(color: Colors.red.shade200),
+                                        ),
+                                        child: Text(
+                                          _timeRemaining,
+                                          style: GoogleFonts.roboto(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red.shade700,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -705,22 +999,23 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
                               ),
                             ),
 
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 24),
 
+                            // ✅ UPDATED: Buttons with proper status
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 40, vertical: 2),
                               child: _styledButton("APPROVE", Colors.green, () {
-                                _sendAlert(status: 1);
+                                _sendAlert(status: 1); // ✅ Status 1 for Active
                               }),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 12),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 40, vertical: 6),
-                              child: _styledButton("SAVE FOR LATER", Colors.black54,
+                              child: _styledButton("SAVE FOR LATER", Colors.blue.shade700,
                                   () {
-                                _sendAlert(status: 0);
+                                _sendAlert(status: 0); // ✅ Status 0 for Draft
                               }),
                             ),
                             Padding(
@@ -800,6 +1095,15 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     );
   }
 
+  /// ✅ Get alert type title for display
+  String _getAlertTypeTitle() {
+    if (_isChainAlert) return "CHURPPY CHAIN ALERT";
+    if (_isLastMinuteDeal) return "LAST MINUTE DEAL";
+    if (_isLocationAlert) return "LOCATION ALERT";
+    if (_isCustomAlert) return "CUSTOM ALERT";
+    return "ALERT";
+  }
+
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
@@ -840,16 +1144,27 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
   Widget _styledButton(String text, Color color, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
-      height: 60,
+      height: 56,
       child: Card(
-        elevation: 1.5,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: TextButton(
           onPressed: onTap,
+          style: TextButton.styleFrom(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
           child: Text(
             text,
-            style: TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 15, color: color),
+            style: GoogleFonts.roboto(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: color,
+            ),
           ),
         ),
       ),

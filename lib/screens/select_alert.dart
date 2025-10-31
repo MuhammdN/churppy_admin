@@ -1,6 +1,10 @@
 import 'package:churppy_admin/screens/contactUsScreen.dart';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 import 'drawer.dart';
 import 'location.dart'; // LocationAlertStep2Screen yahan se aati hai
@@ -16,6 +20,13 @@ class SelectAlertScreen extends StatefulWidget {
 class _SelectAlertScreenState extends State<SelectAlertScreen> {
   int _selectedOption = 0;
 
+  // ✅ ADDED FOR PROFILE IMAGE
+  String? userId;
+  String? profileImage;
+  String? firstName;
+  String? lastName;
+  bool _isLoading = true;
+
   // 🔹 Alert Titles
   final Map<int, String> _alertTitles = {
     0: "LOCATION ALERT - MOST POPULAR",
@@ -26,11 +37,64 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
 
   // 🔹 Sample Texts
   final Map<int, String> _sampleTexts = {
-    0: "Tee’s Tasty Kitchen will be located at 33 Churppy Rd, Churppy, 33333 on October 9th from 11am to 6pm. Look Forward to Seeing You! (Clock with time left or starting in x minutes)",
-    1: "Someone in your area just ordered from Tee’s Tasty Kitchen, 101 Churppy College Court. Place your own order now! (Clock with time left)",
-    2: "We Cooked Too Much! Stop By Tee’s Tasty Kitchen, 101 Churppy Corner, 33333 by 9pm tonight and receive 25% OFF!! (Clock with time left)",
+    0: "Tee's Tasty Kitchen will be located at 33 Churppy Rd, Churppy, 33333 on October 9th from 11am to 6pm. Look Forward to Seeing You! (Clock with time left or starting in x minutes)",
+    1: "Someone in your area just ordered from Tee's Tasty Kitchen, 101 Churppy College Court. Place your own order now! (Clock with time left)",
+    2: "We Cooked Too Much! Stop By Tee's Tasty Kitchen, 101 Churppy Corner, 33333 by 9pm tonight and receive 25% OFF!! (Clock with time left)",
     3: "Customize Alerts request",
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserId();
+  }
+
+  /// ✅ Load user_id then fetch profile
+  Future<void> _loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString("user_id");
+
+    debugPrint("✅ Logged-in User ID: $savedUserId");
+
+    setState(() {
+      userId = savedUserId;
+    });
+
+    if (savedUserId != null) {
+      await _fetchUserProfile(savedUserId);
+    }
+    
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  /// ✅ Fetch User Profile
+  Future<void> _fetchUserProfile(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+
+    try {
+      final res = await http.get(url);
+      debugPrint("📥 Profile Response: ${res.body}");
+
+      if (res.statusCode == 200) {
+        final result = jsonDecode(res.body);
+
+        if (result["status"] == "success") {
+          final data = result["data"];
+
+          setState(() {
+            profileImage = data["image"];     // ✅ full URL already
+            firstName = data["first_name"];
+            lastName = data["last_name"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Profile Fetch Error: $e");
+    }
+  }
 
   void _handleSendAlert() {
     /// ✅ Ab hum selected alert ke hisaab se alertType bhejte hain
@@ -65,16 +129,29 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                /// 🔰 Top Header
+                /// 🔰 Top Header - UPDATED WITH BACK ARROW AND PROFILE IMAGE
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      /// Left: Menu + Logo
+                      /// Left: Back Button + Menu + Logo
                       Row(
                         children: [
+                          // ✅ ADDED BACK ARROW
+                          GestureDetector(
+                            onTap: () => Navigator.of(context).pop(),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              child: const Icon(
+                                Icons.arrow_back,
+                                size: 24,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Builder(
                             builder: (context) => GestureDetector(
                               onTap: () => Scaffold.of(context).openDrawer(),
@@ -93,13 +170,33 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
                         ],
                       ),
 
-                      /// Right: Truck icon
-                      Image.asset(
-                        'assets/images/truck.png',
-                        width: 80,
-                        height: 60,
-                        fit: BoxFit.cover,
-                      ),
+                      /// ✅ RIGHT — PROFILE IMAGE (TAPPABLE)
+                      _isLoading 
+                          ? const CircularProgressIndicator()
+                          : GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                                );
+                              },
+                              child: profileImage != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(50),
+                                      child: Image.network(
+                                        profileImage!,
+                                        width: 40,
+                                        height: 40,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) {
+                                          return const Icon(Icons.person,
+                                              size: 40, color: Colors.grey);
+                                        },
+                                      ),
+                                    )
+                                  : const Icon(Icons.person,
+                                      size: 40, color: Colors.grey),
+                            ),
                     ],
                   ),
                 ),
@@ -185,44 +282,12 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
                         ),
 
                         // ✅ Customize Option (same behavior)
-                        GestureDetector(
-                          onTap: () => setState(() => _selectedOption = 3),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: _selectedOption == 3
-                                  ? Colors.grey.shade100
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Radio<int>(
-                                value: 3,
-                                groupValue: _selectedOption,
-                                onChanged: (val) {
-                                  setState(() => _selectedOption = val!);
-                                },
-                              ),
-                              title: Text(
-                                _alertTitles[3]!,
-                                style: GoogleFonts.roboto(
-                                  fontSize: 14,
-                                  color: Colors.purple,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Text(
-                                  _sampleTexts[3]!,
-                                  style: GoogleFonts.roboto(
-                                    fontSize: 13,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                        _buildOption(
+                          3,
+                          _alertTitles[3]!,
+                          "",
+                          _sampleTexts[3]!,
+                          titleColor: Colors.purple,
                         ),
                         const Divider(),
                         const SizedBox(height: 20),
@@ -259,7 +324,7 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     );
   }
 
-  /// ✅ Unified option builder with tap area selecting radio
+  /// ✅ Updated option builder with animated border outline
   Widget _buildOption(
     int value,
     String title,
@@ -267,29 +332,69 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     String sample, {
     Color? titleColor,
   }) {
+    bool isSelected = _selectedOption == value;
+    
     return GestureDetector(
-      onTap: () => setState(() => _selectedOption = value), // 👈 tap anywhere
-      child: Container(
+      onTap: () => setState(() => _selectedOption = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _selectedOption == value
-              ? Colors.grey.shade100
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Radio<int>(
-                value: value,
-                groupValue: _selectedOption,
-                onChanged: (val) {
-                  setState(() => _selectedOption = val!);
-                },
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF8BC34A) : Colors.grey.shade300,
+            width: isSelected ? 2.5 : 1,
+          ),
+          boxShadow: [
+            if (isSelected)
+              BoxShadow(
+                color: const Color(0xFF8BC34A).withOpacity(0.3),
+                blurRadius: 8,
+                spreadRadius: 2,
+                offset: const Offset(0, 2),
               ),
-              title: Column(
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 4,
+              spreadRadius: 1,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Radio button with custom styling
+            Container(
+              width: 24,
+              height: 24,
+              margin: const EdgeInsets.only(right: 16, top: 2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? const Color(0xFF8BC34A) : Colors.grey,
+                  width: 2,
+                ),
+                color: isSelected ? const Color(0xFF8BC34A) : Colors.transparent,
+              ),
+              child: isSelected
+                  ? const Icon(
+                      Icons.check,
+                      size: 16,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+            
+            // Content
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Title with color
                   Text(
                     title,
                     style: GoogleFonts.roboto(
@@ -298,31 +403,46 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
                       color: titleColor ?? Colors.black,
                     ),
                   ),
+                  
+                  // Description (if available)
                   if (description.isNotEmpty) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       description,
                       style: GoogleFonts.roboto(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                        color: Colors.black87,
                       ),
                     ),
                   ],
+                  
+                  // Sample text (if available)
                   if (sample.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      sample,
-                      style: GoogleFonts.roboto(
-                        fontSize: 13,
-                        color: Colors.black87,
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.grey.shade200,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        sample,
+                        style: GoogleFonts.roboto(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-            const Divider(),
           ],
         ),
       ),

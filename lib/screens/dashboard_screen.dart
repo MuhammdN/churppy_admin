@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'package:churppy_admin/screens/AlertsListScreen.dart';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'drawer.dart';
+
+
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,7 +21,11 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   String? userId;
 
-  // 🔹 Dashboard Stats
+  // ✅ NEW
+  String? profileImage;
+  String? firstName;
+  String? lastName;
+
   int totalChurppyAlerts = 0;
   int totalDelivered = 0;
   int totalCustomers = 0;
@@ -31,7 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadUserId();
   }
 
-  /// ✅ Load user_id then fetch stats
+  /// ✅ Load user_id then fetch profile + stats
   Future<void> _loadUserId() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUserId = prefs.getString("user_id");
@@ -43,7 +51,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     if (savedUserId != null) {
+      await _fetchUserProfile(savedUserId);     // ✅ NEW
       _fetchDashboardData(savedUserId);
+    }
+  }
+
+  /// ✅ Fetch User Profile
+  Future<void> _fetchUserProfile(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+
+    try {
+      final res = await http.get(url);
+      debugPrint("📥 Profile Response: ${res.body}");
+
+      if (res.statusCode == 200) {
+        final result = jsonDecode(res.body);
+
+        if (result["status"] == "success") {
+          final data = result["data"];
+
+          setState(() {
+            profileImage = data["image"];     // ✅ full URL already
+            firstName = data["first_name"];
+            lastName = data["last_name"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Profile Fetch Error: $e");
     }
   }
 
@@ -82,6 +118,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("⚠️ Error: $e")),
+      );
+    }
+  }
+
+  /// ✅ Navigate to Alerts List Screen
+  void _navigateToAlertsList() {
+    if (userId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AlertsListScreen(userId: userId!),
+        ),
       );
     }
   }
@@ -130,11 +178,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ],
                         ),
-                        Image.asset(
-                          'assets/images/truck.png',
-                          width: 100,
-                          height: 80,
-                          fit: BoxFit.cover,
+
+                        /// ✅ RIGHT — PROFILE IMAGE (NOW TAPPABLE)
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                            );
+                          },
+                          child: profileImage != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(50),
+                                  child: Image.network(
+                                    profileImage!,
+                                    width: 50,
+                                    height: 50,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, o, s) {
+                                      return const Icon(Icons.person,
+                                          size: 70, color: Colors.grey);
+                                    },
+                                  ),
+                                )
+                              : const Icon(Icons.person,
+                                  size: 70, color: Colors.grey),
                         ),
                       ],
                     ),
@@ -258,11 +326,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Column(
                             children: [
-                              _statBox(
-                                icon: Icons.notifications,
-                                title: 'Total Churppy Alerts',
-                                count: totalChurppyAlerts.toString(),
-                                color: const Color(0xFF8DC63F),
+                              // ✅ TAPPABLE TOTAL CHURPPY ALERTS
+                              GestureDetector(
+                                onTap: _navigateToAlertsList,
+                                child: _statBox(
+                                  icon: Icons.notifications,
+                                  title: 'Total Churppy Alerts',
+                                  count: totalChurppyAlerts.toString(),
+                                  color: const Color(0xFF8DC63F),
+                                ),
                               ),
                               const SizedBox(height: 10),
                               _statBox(
@@ -331,7 +403,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 🔰 Stat Box Widget
+  /// 🔰 Stat Box Widget - EXACTLY SAME AS BEFORE
   Widget _statBox({
     required IconData icon,
     required String title,

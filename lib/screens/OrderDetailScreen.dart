@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'drawer.dart';
+
 
 class OrderDetailScreen extends StatefulWidget {
   final int merchantId;
@@ -23,6 +26,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _isLoading = false;
   Map<String, dynamic>? _orderData;
 
+  // ✅ ADDED FOR PROFILE IMAGE
+  String? userId;
+  String? profileImage;
+  String? firstName;
+  String? lastName;
+  bool _profileLoading = true;
+
   /// ✅ NEW
   String? _selectedStatus;
 
@@ -30,6 +40,54 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     _fetchOrderDetail();
+    _loadUserId(); // ✅ Load profile data
+  }
+
+  /// ✅ Load user_id then fetch profile
+  Future<void> _loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString("user_id");
+
+    debugPrint("✅ Logged-in User ID (OrderDetail): $savedUserId");
+
+    setState(() {
+      userId = savedUserId;
+    });
+
+    if (savedUserId != null) {
+      await _fetchUserProfile(savedUserId);
+    }
+    
+    setState(() {
+      _profileLoading = false;
+    });
+  }
+
+  /// ✅ Fetch User Profile
+  Future<void> _fetchUserProfile(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+
+    try {
+      final res = await http.get(url);
+      debugPrint("📥 Profile Response (OrderDetail): ${res.body}");
+
+      if (res.statusCode == 200) {
+        final result = jsonDecode(res.body);
+
+        if (result["status"] == "success") {
+          final data = result["data"];
+
+          setState(() {
+            profileImage = data["image"];     // ✅ full URL already
+            firstName = data["first_name"];
+            lastName = data["last_name"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Profile Fetch Error (OrderDetail): $e");
+    }
   }
 
   Future<void> _fetchOrderDetail() async {
@@ -128,7 +186,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                /// ✅ Header
+                                /// ✅ Header - UPDATED WITH PROFILE IMAGE
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 8),
@@ -151,13 +209,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                         height: 26,
                                       ),
                                       const Spacer(),
-                                      Flexible(
-                                        child: Image.asset(
-                                          "assets/images/truck.png",
-                                          height: 90,
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
+                                      
+                                      /// ✅ PROFILE IMAGE INSTEAD OF TRUCK ICON
+                                      _profileLoading 
+                                          ? const CircularProgressIndicator()
+                                          : GestureDetector(
+                                              onTap: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                                                );
+                                              },
+                                              child: profileImage != null
+                                                  ? ClipRRect(
+                                                      borderRadius: BorderRadius.circular(50),
+                                                      child: Image.network(
+                                                        profileImage!,
+                                                        width: 40,
+                                                        height: 40,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (c, o, s) {
+                                                          return const Icon(Icons.person,
+                                                              size: 40, color: Colors.grey);
+                                                        },
+                                                      ),
+                                                    )
+                                                  : const Icon(Icons.person,
+                                                      size: 40, color: Colors.grey),
+                                            ),
                                     ],
                                   ),
                                 ),

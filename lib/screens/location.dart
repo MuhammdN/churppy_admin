@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,6 +25,7 @@ class AlertModel {
   final String radius;
   final String imageName;
   final String alertType; // ✅ New field
+  final String discount; // ✅ UPDATED: Now required field with "0" as default
 
   AlertModel({
     required this.merchantId,
@@ -36,7 +38,8 @@ class AlertModel {
     required this.endTime,
     required this.radius,
     required this.imageName,
-    required this.alertType, // ✅
+    required this.alertType,
+    required this.discount, // ✅ UPDATED: Now required
   });
 }
 
@@ -147,7 +150,27 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
   final TextEditingController _customTitleCtrl = TextEditingController();
   final TextEditingController _customDescCtrl = TextEditingController();
 
+  // ✅ UPDATED: Default value "0" for discount
+  String _selectedDiscount = "0";
+
+  // ✅ Discount options
+  final List<String> _discountOptions = [
+    '0', // ✅ Default value
+    '10% OFF',
+    '15% OFF', 
+    '20% OFF',
+    '25% OFF',
+    '30% OFF',
+    '35% OFF',
+    '40% OFF',
+    '45% OFF',
+    '50% OFF'
+  ];
+
   String? userId;
+  String? profileImage; // ✅ ADDED FOR PROFILE IMAGE
+  String? firstName;    // ✅ ADDED FOR USER NAME
+  String? lastName;     // ✅ ADDED FOR USER NAME
   String? imageName;
   String? _existingImageUrl; // 🔰 NEW: Store existing image URL from database
   File? _pickedImage;
@@ -158,6 +181,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
   bool _isInitialLoading = true;
 
   bool get isCustom => widget.alertType == "custom";
+  bool get isLastMinuteDeal => widget.alertTitle.contains("LAST MINUTE DEALS");
 
   @override
   void initState() {
@@ -173,12 +197,40 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
 
     if (savedUserId != null) {
       await _fetchUserDetails(savedUserId);
+      await _fetchUserProfile(savedUserId); // ✅ ADDED FOR PROFILE DATA
     }
     
     // 🔰 Hide initial loader after data is loaded
     setState(() {
       _isInitialLoading = false;
     });
+  }
+
+  /// ✅ NEW: Fetch User Profile for Header
+  Future<void> _fetchUserProfile(String uid) async {
+    final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+
+    try {
+      final res = await http.get(url);
+      debugPrint("📥 Profile Response: ${res.body}");
+
+      if (res.statusCode == 200) {
+        final result = jsonDecode(res.body);
+
+        if (result["status"] == "success") {
+          final data = result["data"];
+
+          setState(() {
+            profileImage = data["image"];     // ✅ full URL already
+            firstName = data["first_name"];
+            lastName = data["last_name"];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Profile Fetch Error: $e");
+    }
   }
 
   Future<void> _fetchUserDetails(String id) async {
@@ -302,19 +354,42 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
     }
   }
 
-  bool _validateDays() {
-    if (_firstDayCtrl.text.isEmpty || _lastDayCtrl.text.isEmpty) return true;
+  // ✅ UPDATED: Single validation for both date and time (72 hours max, 10 minutes min)
+  String? _validateDateTime() {
+    if (_firstDayCtrl.text.isEmpty || _lastDayCtrl.text.isEmpty || 
+        _timeStartCtrl.text.isEmpty || _timeEndCtrl.text.isEmpty) {
+      return null;
+    }
+    
     try {
-      final start = DateTime.parse(_firstDayCtrl.text);
-      final end = DateTime.parse(_lastDayCtrl.text);
-      final diff = end.difference(start).inDays;
-      return diff <= 3;
+      // Combine date and time
+      final startDateTime = DateTime.parse("${_firstDayCtrl.text} ${_timeStartCtrl.text}");
+      final endDateTime = DateTime.parse("${_lastDayCtrl.text} ${_timeEndCtrl.text}");
+      
+      final totalDuration = endDateTime.difference(startDateTime);
+      
+      debugPrint("⏰ Total Duration: ${totalDuration.inHours} hours ${totalDuration.inMinutes.remainder(60)} minutes");
+      
+      // Check minimum 10 minutes
+      if (totalDuration.inMinutes < 10) {
+        return "⚠️ Minimum alert duration should be 10 minutes";
+      }
+      
+      // Check maximum 72 hours (3 days)
+      if (totalDuration.inHours > 72) {
+        return "⚠️ Maximum alert duration should be 72 hours (3 days)";
+      }
+      
+      return null;
     } catch (e) {
-      return false;
+      debugPrint("❌ DateTime validation error: $e");
+      return "⚠️ Invalid date/time format";
     }
   }
 
   void _sendChurppyAlert() {
+    // ✅ UPDATED: No need to check discount separately, always sends "0" or selected discount
+
     if (userId == null ||
         _addressCtrl.text.isEmpty ||
         _firstDayCtrl.text.isEmpty ||
@@ -328,10 +403,11 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
       return;
     }
 
-    if (!_validateDays()) {
+    // ✅ UPDATED: Single date-time validation
+    final dateTimeError = _validateDateTime();
+    if (dateTimeError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("⚠️ You can only select up to 3 days difference")),
+        SnackBar(content: Text(dateTimeError)),
       );
       return;
     }
@@ -349,6 +425,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
             ? _customTitleCtrl.text
             : "Custom Alert")
         : widget.alertTitle;
+    
     final descToSend = isCustom
         ? (_customDescCtrl.text.isNotEmpty
             ? _customDescCtrl.text
@@ -366,10 +443,12 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
       endTime: _timeEndCtrl.text,
       radius: "7 miles",
       imageName: imageName!,
-      alertType: widget.alertType, // ✅ Pass correct type
+      alertType: widget.alertType,
+      discount: _selectedDiscount, // ✅ UPDATED: Always sends value ("0" or selected discount)
     );
 
     debugPrint("📦 Going to Review screen with alertType: ${alert.alertType}");
+    debugPrint("💰 Discount being sent: ${_selectedDiscount}");
 
     Navigator.push(
       context,
@@ -392,7 +471,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    /// 🔰 Top Header
+                    /// 🔰 Top Header - UPDATED WITH PROFILE IMAGE
                     Padding(
                       padding:
                           const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
@@ -412,8 +491,32 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                               Image.asset('assets/images/logo.png', width: 100),
                             ],
                           ),
-                          Image.asset('assets/images/truck.png',
-                              width: 80, height: 60, fit: BoxFit.cover),
+
+                          /// ✅ RIGHT — PROFILE IMAGE (TAPPABLE)
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                              );
+                            },
+                            child: profileImage != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(50),
+                                    child: Image.network(
+                                      profileImage!,
+                                      width: 40,
+                                      height: 40,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (c, o, s) {
+                                        return const Icon(Icons.person,
+                                            size: 40, color: Colors.grey);
+                                      },
+                                    ),
+                                  )
+                                : const Icon(Icons.person,
+                                    size: 40, color: Colors.grey),
+                          ),
                         ],
                       ),
                     ),
@@ -495,31 +598,66 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                 maxLines: 3,
                               ),
                               const SizedBox(height: 16),
-                            ] else
+                            ],
+
+                            /// ✅ ALWAYS SHOW THE SELECTED ALERT DESCRIPTION (for both custom and pre-defined alerts)
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(6),
+                                color: Colors.grey.shade100,
+                              ),
+                              child: Row(
+                                children: [
+                                  Image.asset('assets/images/truck.png',
+                                      height: 60, width: 60),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      widget.alertDescription, // ✅ This will show the selected alert description
+                                      style: GoogleFonts.roboto(
+                                          fontSize: 12, color: Colors.black),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // ✅ UPDATED: Discount Dropdown for Last Minute Deals (always shows "0" as default)
+                            if (isLastMinuteDeal) ...[
+                              Text("SELECT DISCOUNT",
+                                  style: GoogleFonts.roboto(
+                                      fontSize: 13, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 6),
                               Container(
-                                padding: const EdgeInsets.all(10),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
                                 decoration: BoxDecoration(
                                   border: Border.all(color: Colors.grey.shade400),
                                   borderRadius: BorderRadius.circular(6),
-                                  color: Colors.grey.shade100,
                                 ),
-                                child: Row(
-                                  children: [
-                                    Image.asset('assets/images/truck.png',
-                                        height: 60, width: 60),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        widget.alertDescription,
-                                        style: GoogleFonts.roboto(
-                                            fontSize: 12, color: Colors.black),
-                                      ),
-                                    ),
-                                  ],
+                                child: DropdownButton<String>(
+                                  value: _selectedDiscount,
+                                  isExpanded: true,
+                                  underline: const SizedBox(),
+                                  hint: const Text("Choose Discount"),
+                                  items: _discountOptions.map((String value) {
+                                    return DropdownMenuItem<String>(
+                                      value: value,
+                                      child: Text(value == "0" ? "No Discount" : value),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      _selectedDiscount = newValue ?? "0";
+                                    });
+                                  },
                                 ),
                               ),
-
-                            const SizedBox(height: 16),
+                              const SizedBox(height: 16),
+                            ],
 
                             Text(
                               "LOCATION IS SET TO DEFAULT ADDRESS.\nYou can change location to Where You Are NOW, Where You Will be OR PROMOTE IN A ZIP CODE.",
@@ -590,17 +728,6 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                 ),
                               ],
                             ),
-                            if (!_validateDays())
-                              const Padding(
-                                padding: EdgeInsets.only(top: 6),
-                                child: Text(
-                                  "⚠️ You can only select up to 3 days!",
-                                  style: TextStyle(
-                                      color: Colors.red,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
                             const SizedBox(height: 16),
 
                             Row(
@@ -648,6 +775,18 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                                 ),
                               ],
                             ),
+                            // ✅ UPDATED: Single date-time validation message
+                            if (_validateDateTime() != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  _validateDateTime()!,
+                                  style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             const SizedBox(height: 16),
 
                             // =================== IMAGE UPLOAD SECTION ===================
