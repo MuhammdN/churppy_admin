@@ -72,7 +72,7 @@ class SplashScreen extends StatelessWidget {
               left: 0,
               right: 0, // 👈 centers it automatically
               child: Text(
-                "Churppy\nTrademark and Patent pending",
+                "Churppy\nTrademark and Patent Pending",
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.black,

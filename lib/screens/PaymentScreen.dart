@@ -123,7 +123,7 @@ class _PaymentScreenState extends material.State<PaymentScreen> {
 
     if (data["status"] != "success") {
       material.ScaffoldMessenger.of(context).showSnackBar(
-        material.SnackBar(content: material.Text("⚠️ Payment ok, but DB update failed: ${data['message']}")),
+        material.SnackBar(content: material.Text("DB update failed: ${data['message']}")),
       );
       return;
     }
@@ -207,12 +207,33 @@ class _PaymentScreenState extends material.State<PaymentScreen> {
       await Stripe.instance.presentPaymentSheet();
       await _afterPaymentSuccess();
       setState(() => isLoading = false);
-    } catch (e) {
-      setState(() => isLoading = false);
-      material.ScaffoldMessenger.of(context).showSnackBar(
-        material.SnackBar(content: material.Text("❌ Payment failed: $e")),
-      );
-    }
+   } catch (e) {
+  setState(() => isLoading = false);
+
+  // CHECK IF USER CANCELLED PAYMENT SHEET
+  if (e is StripeException && e.error.code == FailureCode.Canceled) {
+    material.ScaffoldMessenger.of(context).showSnackBar(
+      const material.SnackBar(
+        content: material.Text(
+          "Payment cancelled",
+          style: material.TextStyle(color: material.Colors.white),
+        ),
+        backgroundColor: material.Colors.orange,
+        behavior: material.SnackBarBehavior.floating,
+      ),
+    );
+    return;
+  }
+
+  // ANY OTHER PAYMENT ERROR
+  material.ScaffoldMessenger.of(context).showSnackBar(
+    material.SnackBar(
+      content: material.Text("❌ Payment failed: $e"),
+      backgroundColor: material.Colors.red,
+      behavior: material.SnackBarBehavior.floating,
+    ),
+  );
+}
   }
 
   @override
@@ -298,7 +319,7 @@ class _PaymentScreenState extends material.State<PaymentScreen> {
                       child: material.Column(
                         crossAxisAlignment: material.CrossAxisAlignment.start,
                         children: [
-                          material.Text("STEP 4 - Pay and Send Churppy Alert",
+                          material.Text("Pay and Send Churppy Alert",
                               style: material.TextStyle(fontSize: 18, fontWeight: material.FontWeight.w600)),
                           material.SizedBox(height: 8),
                           material.Text("Current Plan: Single Use",

@@ -119,6 +119,13 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   // ✅ NEW: Auto-fill user data in form fields
   void _autoFillUserData(Map<String, dynamic> userData) {
     setState(() {
+      // ⭐ Auto-fill TITLE with Full Name
+final fullName =
+    "${userData['first_name'] ?? ''} ${userData['last_name'] ?? ''}".trim();
+if (fullName.isNotEmpty) {
+  titleCtrl.text = fullName;
+}
+
       // Auto-fill email
       final email = userData['email']?.toString();
       if (email != null && email.isNotEmpty) {
@@ -191,7 +198,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
           ),
         );
 
-        titleCtrl.clear();
+       
         messageCtrl.clear();
         setState(() => selectedCategory = null);
       } else {
@@ -282,9 +289,9 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
         SizedBox(height: hp(1.5)),
         
         _buildCustomField(
-          label: "Title",
+          label: "Name",
           controller: titleCtrl,
-          icon: Icons.title,
+          icon: Icons.person,
           fs: fs,
           validator: (v) => v!.trim().isEmpty ? "Title is required" : null,
         ),
@@ -668,7 +675,7 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
         SizedBox(height: hp(1)),
         _buildContactMethod(
           Icons.access_time,
-          "Mon - Fri: 9:00 AM - 6:00 PM",
+          "Mon - Fri: 9:00 AM - 5:00 PM",
           fs,
         ),
       ],

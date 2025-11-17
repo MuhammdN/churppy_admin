@@ -15,30 +15,17 @@ class AddressAutocompleteField extends StatefulWidget {
 class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
   final TextEditingController _ctrl = TextEditingController();
 
-  /// Fetch suggestions from Nominatim API
-  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
-    await Future.delayed(const Duration(milliseconds: 400)); // debounce
+  String? _currentCountryCode;
+  Position? _currentPosition;
 
-    if (query.isEmpty) return [];
-
-    final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/search'
-            '?q=${Uri.encodeComponent(query)}&format=json&addressdetails=1&limit=6');
-
-    final resp = await http.get(uri, headers: {
-      'User-Agent': 'MyFlutterApp/1.0 (your-email@example.com)' // required
-    });
-
-    if (resp.statusCode == 200) {
-      final List data = json.decode(resp.body);
-      return data.cast<Map<String, dynamic>>();
-    } else {
-      return [];
-    }
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocationAndCountry();
   }
 
-  /// Get current location and save lat,lon
-  Future<void> useCurrentLocation() async {
+  
+  Future<void> _getUserLocationAndCountry() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,21 +47,58 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
       return;
     }
 
-    Position pos = await Geolocator.getCurrentPosition(
+    final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high);
 
-    // 👇 lat,lon store karo
-    setState(() {
-      _ctrl.text = "${pos.latitude},${pos.longitude}";
+    setState(() => _currentPosition = pos);
+
+    // 👇 Reverse geocode to get country code
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json');
+
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'MyFlutterApp/1.0 (your-email@example.com)',
     });
 
-    print("Current Location: ${pos.latitude},${pos.longitude}");
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body);
+      final countryCode = data['address']?['country_code']?.toString().toUpperCase();
+      setState(() {
+        _currentCountryCode = countryCode;
+        _ctrl.text = data['display_name'] ?? "";
+      });
+      print("🌍 Current country: $_currentCountryCode");
+    }
+  }
+
+  /// ✅ Step 2: Fetch address suggestions limited to current country
+  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
+    await Future.delayed(const Duration(milliseconds: 400)); // debounce
+
+    if (query.isEmpty || _currentCountryCode == null) return [];
+
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(query)}'
+        '&countrycodes=${_currentCountryCode!.toLowerCase()}'
+        '&format=json&addressdetails=1&limit=6');
+
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'MyFlutterApp/1.0 (your-email@example.com)',
+    });
+
+    if (resp.statusCode == 200) {
+      final List data = json.decode(resp.body);
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      return [];
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Address Autocomplete")),
+      appBar: AppBar(title: const Text("Smart Address Autocomplete")),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: TypeAheadField<Map<String, dynamic>>(
@@ -84,10 +108,10 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
               controller: controller,
               focusNode: focusNode,
               decoration: InputDecoration(
-                labelText: 'Enter Address',
+                labelText: 'Enter your address',
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.my_location),
-                  onPressed: useCurrentLocation,
+                  onPressed: _getUserLocationAndCountry,
                 ),
               ),
             );
@@ -97,13 +121,10 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
             final address = suggestion['address'] ?? {};
             final sub = [
               address['road'],
-              address['neighbourhood'],
               address['suburb'],
               address['city'],
-              address['state'],
-              address['country']
+              address['state']
             ].where((e) => e != null).join(", ");
-
             return ListTile(
               title: Text(suggestion['display_name'] ?? ''),
               subtitle: Text(sub),
@@ -112,14 +133,12 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
           onSelected: (suggestion) {
             final lat = suggestion['lat']?.toString() ?? "";
             final lon = suggestion['lon']?.toString() ?? "";
-
-            // 👇 lat,lon textfield me store karo
-            _ctrl.text = "$lat,$lon";
-
-            print("Selected LatLon: $lat,$lon");
+            _ctrl.text = suggestion['display_name'] ?? '';
+            print("📍 Selected: $lat,$lon");
           },
-          emptyBuilder: (context) =>
-          const ListTile(title: Text('No results')),
+          emptyBuilder: (context) => const ListTile(
+            title: Text('No results found'),
+          ),
         ),
       ),
     );

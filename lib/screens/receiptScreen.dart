@@ -1,5 +1,6 @@
 import 'package:churppy_admin/screens/contactUsScreen.dart';
 import 'package:churppy_admin/screens/location.dart';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart'; // ✅ For formatting current date
@@ -54,51 +55,39 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
   }
 
   /// ✅ Fetch user profile from API
-  Future<void> _fetchUserProfile(String id) async {
-    try {
-      // Try user_with_merchant.php first
-      final url1 = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/user_with_merchant.php?id=$id",
-      );
-      final response1 = await http.get(url1);
+  Future<void> _fetchUserProfile(String uid) async {
+  final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
 
-      if (response1.statusCode == 200) {
-        final data = json.decode(response1.body);
-        if (data['status'] == 'success' && data['data'] is Map) {
-          final userData = data['data'] as Map<String, dynamic>;
-          _updateUserData(userData);
-          return;
-        }
+  try {
+    final res = await http.get(url);
+    debugPrint("📥 Receipt Profile Response: ${res.body}");
+
+    if (res.statusCode == 200) {
+      final result = jsonDecode(res.body);
+
+      if (result["status"] == "success") {
+        final data = result["data"];
+
+        setState(() {
+          userName = "${data["first_name"] ?? ""} ${data["last_name"] ?? ""}".trim();
+          userEmail = data["email"];
+          userImage = data["image"]; // ⭐ SAME AS DASHBOARD
+          _isLoading = false;
+        });
       }
-
-      // Fallback to user.php
-      final url2 = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/user.php?id=$id",
-      );
-      final response2 = await http.get(url2);
-
-      if (response2.statusCode == 200) {
-        final data = json.decode(response2.body);
-        if (data['status'] == 'success' && data['data'] is Map) {
-          final userData = data['data'] as Map<String, dynamic>;
-          _updateUserData(userData);
-          return;
-        }
-      }
-
-      setState(() => _isLoading = false);
-    } catch (e) {
-      debugPrint("❌ Error fetching user profile: $e");
-      setState(() => _isLoading = false);
     }
+  } catch (e) {
+    debugPrint("⚠️ Receipt Profile Error: $e");
+    setState(() => _isLoading = false);
   }
+}
 
   /// ✅ Update user data from API response
   void _updateUserData(Map<String, dynamic> userData) {
     setState(() {
       userName = _getUserName(userData);
       userEmail = userData['email']?.toString();
-      userImage = _getUserImage(userData);
+      
       _isLoading = false;
     });
 
@@ -123,17 +112,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
     }
   }
 
-  /// ✅ Extract user image from data
-  String _getUserImage(Map<String, dynamic> data) {
-    final image = data['image']?.toString();
-    if (image != null && image.isNotEmpty) {
-      if (image.startsWith('http://') || image.startsWith('https://')) {
-        return image;
-      }
-      return "https://churppy.eurekawebsolutions.com/uploads/$image";
-    }
-    return 'assets/images/truck.png'; // Default image
-  }
+ 
 
   /// ✅ Convert relative image name to full URL
   String _abs(String fileName) {
@@ -153,7 +132,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       body: SafeArea(
         child: _isLoading
             ? const Center(
-                child: CircularProgressIndicator(color: Colors.purple),
+                child: CircularProgressIndicator(color: Color(0xFF804692)),
               )
             : SingleChildScrollView(
                 child: Column(
@@ -181,20 +160,28 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                               ],
                             ),
                           ),
-                          ClipOval(
-                            child: userImage != null
-                                ? Image.network(
-                                    _abs(userImage!),
-                                    width: 45,
-                                    height: 45,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        Image.asset('assets/images/truck.png', 
-                                            width: 70, height: 70, fit: BoxFit.cover),
-                                  )
-                                : Image.asset('assets/images/truck.png',
-                                    width: 70, height: 70, fit: BoxFit.cover),
-                          ),
+                       GestureDetector(
+  onTap: () {
+    //  Navigator.pushReplacement(
+    //   context,
+    //   MaterialPageRoute(builder: (context) => ProfileScreen()),
+    // );
+  },
+  child: ClipOval(
+    child: userImage != null && userImage!.isNotEmpty
+        ? Image.network(
+            userImage!,
+            width: 50,
+            height: 50,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.person, size: 40, color: Colors.grey),
+          )
+        : const Icon(Icons.person, size: 40, color: Colors.grey),
+  ),
+)
+
+
                         ],
                       ),
                     ),
@@ -219,7 +206,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                                  color: Color(0xFF8DC63F),
                                 ),
                               ),
                               Text(
@@ -235,7 +222,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.purple,
+                                  color: Color(0xFF804692),
                                 ),
                               ),
                             ],
@@ -310,18 +297,19 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
 
                     /// HOME button with bell
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 100, vertical: 5),
-                      child: _styledButton("HOME", Colors.purple, () {
+                     padding: const EdgeInsets.symmetric(horizontal: 130),
+
+                      child: _styledButton("HOME", Color(0xFF804692), () {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(builder: (context) => const DashboardScreen()),
                         );
                       }, withBell: true),
                     ),
-
+const SizedBox(height: 2),
                     /// CONTACT US button
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 100, vertical: 5),
+                     padding: const EdgeInsets.symmetric(horizontal: 130),
                       child: _styledButton("CONTACT US", Colors.red, () {
                         Navigator.push(
                           context,
@@ -330,7 +318,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                       }),
                     ),
 
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
 
                     /// Customize Alerts Link
                     Center(
@@ -350,7 +338,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                         child: Text(
                           "TRY CUSTOMIZE ALERTS",
                           style: GoogleFonts.inter(
-                            color: Colors.purple,
+                            color: Color(0xFF804692),
                             fontWeight: FontWeight.bold,
                             fontStyle: FontStyle.italic,
                             decoration: TextDecoration.underline,
@@ -419,43 +407,46 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       ),
     );
   }
-
-  /// 🔹 Styled Button with optional bell
-  Widget _styledButton(String text, Color color, VoidCallback onTap,
-      {bool withBell = false}) {
-    return SizedBox(
-      width: double.infinity,
-      height: 45,
-      child: Card(
-        elevation: 1.5,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: TextButton(
-          onPressed: onTap,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (withBell) ...[
-                Image.asset(
-                  'assets/images/bell_churppy.png',
-                  height: 30,
-                  width: 30,
-                ),
-                const SizedBox(width: 2),
-              ],
-              Text(
-                text,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: color,
-                ),
+Widget _styledButton(String text, Color color, VoidCallback onTap,
+    {bool withBell = false}) {
+  return Stack(
+    clipBehavior: Clip.none, // allow icon to go outside
+    children: [
+      // Main Button
+      SizedBox(
+        width: double.infinity,
+        height: 45,
+        child: Card(
+          elevation: 1.5,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: TextButton(
+            onPressed: onTap,
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: color,
               ),
-            ],
+            ),
           ),
         ),
       ),
-    );
-  }
+
+      // Bell ONLY when withBell = true
+      if (withBell)
+        Positioned(
+          left: -35, // ← Button ke bahir
+          top: 8,
+          child: Image.asset(
+            'assets/images/bell_churppy.png',
+            height: 35,
+            width: 35,
+          ),
+        ),
+    ],
+  );
+}
 }

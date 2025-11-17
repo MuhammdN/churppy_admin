@@ -3,6 +3,10 @@
         android:label="churppy_admin"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+    android:name="com.google.android.gms.auth.api.credentials.CLIENT_ID"
+    android:value="YOUR-WEB-CLIENT-ID.apps.googleusercontent.com"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

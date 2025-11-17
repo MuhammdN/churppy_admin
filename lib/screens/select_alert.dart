@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart';
 
 import 'drawer.dart';
 import 'location.dart'; // LocationAlertStep2Screen yahan se aati hai
@@ -20,26 +21,27 @@ class SelectAlertScreen extends StatefulWidget {
 class _SelectAlertScreenState extends State<SelectAlertScreen> {
   int _selectedOption = 0;
 
-  // ✅ ADDED FOR PROFILE IMAGE
+  // ✅ ADDED FOR PROFILE IMAGE AND BUSINESS NAME
   String? userId;
   String? profileImage;
   String? firstName;
   String? lastName;
+  String businessName = ""; // ✅ NEW: Dynamic business name
   bool _isLoading = true;
 
   // 🔹 Alert Titles
   final Map<int, String> _alertTitles = {
     0: "LOCATION ALERT - MOST POPULAR",
-    1: "CHURPPY CHAIN ALERT",
+    1: "CHURPPY CHAIN ALERT", 
     2: "LAST MINUTE DEALS",
     3: "CUSTOMIZE ALERTS",
   };
 
-  // 🔹 Sample Texts
+  // 🔹 Sample Texts - NOW DYNAMIC WITH BUSINESS NAME
   final Map<int, String> _sampleTexts = {
-    0: "Tee's Tasty Kitchen will be located at 33 Churppy Rd, Churppy, 33333 on October 9th from 11am to 6pm. Look Forward to Seeing You! (Clock with time left or starting in x minutes)",
-    1: "Someone in your area just ordered from Tee's Tasty Kitchen, 101 Churppy College Court. Place your own order now! (Clock with time left)",
-    2: "We Cooked Too Much! Stop By Tee's Tasty Kitchen, 101 Churppy Corner, 33333 by 9pm tonight and receive 25% OFF!! (Clock with time left)",
+    0: "Loading business info...",
+    1: "Loading business info...", 
+    2: "Loading business info...",
     3: "Customize Alerts request",
   };
 
@@ -49,7 +51,7 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     _loadUserId();
   }
 
-  /// ✅ Load user_id then fetch profile
+  /// ✅ Load user_id then fetch profile AND business name
   Future<void> _loadUserId() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUserId = prefs.getString("user_id");
@@ -62,6 +64,8 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
 
     if (savedUserId != null) {
       await _fetchUserProfile(savedUserId);
+      await _fetchBusinessName(savedUserId); // ✅ NEW: Fetch business name
+      _updateSampleTexts(); // ✅ NEW: Update texts with business name
     }
     
     setState(() {
@@ -94,6 +98,142 @@ class _SelectAlertScreenState extends State<SelectAlertScreen> {
     } catch (e) {
       debugPrint("⚠️ Profile Fetch Error: $e");
     }
+  }
+
+  /// ✅ NEW: Fetch Business Name from APIs
+  Future<void> _fetchBusinessName(String id) async {
+    try {
+      // 1) Try user_with_merchant.php first
+      try {
+        final url1 = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/user_with_merchant.php?id=$id",
+        );
+        final r1 = await http.get(url1);
+        if (r1.statusCode == 200) {
+          final j = jsonDecode(r1.body);
+          if (j['status'] == 'success' && j['data'] is Map) {
+            final bn = _guessBusinessName(j['data'] as Map<String, dynamic>);
+            if (bn.isNotEmpty) {
+              setState(() => businessName = bn);
+              debugPrint("✅ Business name (merchant API): $businessName");
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("⚠️ user_with_merchant fetch error: $e");
+      }
+
+      // 2) Fallback to user.php
+      try {
+        final url2 = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/user.php?id=$id",
+        );
+        final r2 = await http.get(url2);
+        if (r2.statusCode == 200) {
+          final j = jsonDecode(r2.body);
+          if (j['status'] == 'success' && j['data'] is Map) {
+            final bn = _guessBusinessName(j['data'] as Map<String, dynamic>);
+            if (bn.isNotEmpty) {
+              setState(() => businessName = bn);
+              debugPrint("✅ Business name (user API): $businessName");
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("⚠️ user.php fetch error: $e");
+      }
+
+      // If still empty, use first + last name
+      if (businessName.isEmpty && firstName != null) {
+        setState(() => businessName = "$firstName${lastName != null ? ' $lastName' : ''}");
+        debugPrint("✅ Using user name as business name: $businessName");
+      }
+    } catch (e) {
+      debugPrint("❌ Business fetch failed: $e");
+    }
+  }
+
+  /// ✅ NEW: Extract business name from API data
+  String _guessBusinessName(Map<String, dynamic> data) {
+    final candidates = [
+      'business_name',
+      'business_title', 
+      'title',
+      'name',
+      'about_us'
+    ];
+    for (final k in candidates) {
+      final v = data[k];
+      if (v != null && v.toString().trim().isNotEmpty) {
+        return v.toString().trim();
+      }
+    }
+    return "";
+  }
+
+  /// ✅ NEW: Calculate time remaining for alerts
+  String _getTimeRemaining(int alertType) {
+    final now = DateTime.now();
+    
+    switch (alertType) {
+      case 0: // Location Alert - Starting in X minutes
+        final startTime = DateTime(now.year, now.month, now.day, 11, 0); // 11 AM today
+        final difference = startTime.difference(now);
+        
+        if (difference.isNegative) {
+          return "Started ${difference.inHours.abs()}h ${difference.inMinutes.abs() % 60}m ago";
+        } else {
+          return "Starting in ${difference.inHours}h ${difference.inMinutes % 60}m";
+        }
+        
+      case 1: // Chain Alert - Time left
+        final endTime = DateTime(now.year, now.month, now.day, 20, 0); // 8 PM today
+        final difference = endTime.difference(now);
+        
+        if (difference.isNegative) {
+          return "Ended ${difference.inHours.abs()}h ago";
+        } else {
+          return "${difference.inHours}h ${difference.inMinutes % 60}m left";
+        }
+        
+      case 2: // Last Minute Deal - Time left
+        final endTime = DateTime(now.year, now.month, now.day, 21, 0); // 9 PM today
+        final difference = endTime.difference(now);
+        
+        if (difference.isNegative) {
+          return "Deal expired ${difference.inHours.abs()}h ago";
+        } else {
+          return "${difference.inHours}h ${difference.inMinutes % 60}m left";
+        }
+        
+      default:
+        return "";
+    }
+  }
+
+  /// ✅ NEW: Format date for display
+  String _getFormattedDate() {
+    final now = DateTime.now();
+    return DateFormat('MMMM d').format(now); // e.g., "October 9"
+  }
+
+  /// ✅ NEW: Update sample texts with dynamic business name and REAL times
+  void _updateSampleTexts() {
+    final business = businessName.isNotEmpty ? businessName : "Our Business";
+    final todayDate = _getFormattedDate();
+    
+    setState(() {
+      // Location Alert - with actual start time calculation
+      _sampleTexts[0] = "$business will be located at 33 Churppy Rd, Churppy, 33333 on $todayDate from 11am to 6pm. Look Forward to Seeing You! ${_getTimeRemaining(0)}";
+      
+      // Chain Alert - with actual time left calculation
+      _sampleTexts[1] = "Someone in your area just ordered from $business, 101 Churppy College Court. Place your own order now! ${_getTimeRemaining(1)}";
+      
+      // Last Minute Deal - with actual time left calculation
+      _sampleTexts[2] = "We Cooked Too Much! Stop By $business, 101 Churppy Corner, 33333 by 9pm tonight and receive 25% OFF!! ${_getTimeRemaining(2)}";
+    });
   }
 
   void _handleSendAlert() {

@@ -5,6 +5,7 @@ import 'routes.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
 
   // ✅ Stripe ko publishable key set karo (pk_... wali key from Stripe dashboard)
   Stripe.publishableKey = "pk_test_51S5zcnRrXfDjT97KJW5stvP7bGYTJZAiBsLYkWM4rhC8kDW6s1hqWsO6EY3h21m7PJVCLc4CeJXYOuZ562DW6VbZ00PmGFh5bv";

@@ -1,11 +1,590 @@
 import 'dart:convert';
+import 'package:churppy_admin/screens/dashboard_screen.dart';
 import 'package:churppy_admin/screens/profile.dart';
+import 'package:churppy_admin/screens/reactivate_payment_screen.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:geolocator/geolocator.dart';
 import 'drawer.dart';
+
+
+
+// 🔰 NEW: Address Autocomplete Field (From your API code)
+class AddressAutocompleteField extends StatefulWidget {
+  final TextEditingController controller;
+  const AddressAutocompleteField({super.key, required this.controller});
+
+  @override
+  State<AddressAutocompleteField> createState() =>
+      _AddressAutocompleteFieldState();
+}
+
+class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
+  String? _currentCountryCode;
+  Position? _currentPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocationAndCountry();
+  }
+
+  Future<void> _getUserLocationAndCountry() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+
+    setState(() => _currentPosition = pos);
+
+    // 👇 Reverse geocode to get country code
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json');
+
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'ChurppyApp/1.0',
+    });
+
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body);
+      final countryCode = data['address']?['country_code']?.toString().toUpperCase();
+      setState(() {
+        _currentCountryCode = countryCode;
+        widget.controller.text = data['display_name'] ?? "";
+      });
+    }
+  }
+
+  /// ✅ Fetch address suggestions limited to current country
+  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
+    if (query.isEmpty || _currentCountryCode == null) return [];
+
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(query)}'
+        '&countrycodes=${_currentCountryCode!.toLowerCase()}'
+        '&format=json&addressdetails=1&limit=6');
+
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'ChurppyApp/1.0',
+    });
+
+    if (resp.statusCode == 200) {
+      final List data = json.decode(resp.body);
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      return [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TypeAheadField<Map<String, dynamic>>(
+      controller: widget.controller,
+      builder: (context, controller, focusNode) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            hintText: "Search address...",
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.my_location),
+              onPressed: _getUserLocationAndCountry,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+        );
+      },
+      suggestionsCallback: fetchSuggestions,
+      itemBuilder: (context, suggestion) {
+        final address = suggestion['address'] ?? {};
+        final sub = [
+          address['road'],
+          address['suburb'],
+          address['city'],
+          address['state']
+        ].where((e) => e != null).join(", ");
+        return ListTile(
+          title: Text(suggestion['display_name'] ?? ''),
+          subtitle: Text(sub.isNotEmpty ? sub : ''),
+        );
+      },
+      onSelected: (suggestion) {
+        widget.controller.text = suggestion['display_name'] ?? '';
+      },
+      emptyBuilder: (context) => const ListTile(
+        title: Text('No results found'),
+      ),
+    );
+  }
+}
+
+// 🔰 Reactivation Screen with Address Autocomplete
+class ReactivateAlertScreen extends StatefulWidget {
+  final Map<String, dynamic> alert;
+  final Function(String, String, String, String) onReactivate;
+
+  const ReactivateAlertScreen({
+    super.key,
+    required this.alert,
+    required this.onReactivate,
+  });
+
+  @override
+  State<ReactivateAlertScreen> createState() => _ReactivateAlertScreenState();
+}
+
+class _ReactivateAlertScreenState extends State<ReactivateAlertScreen> {
+  final TextEditingController _addressCtrl = TextEditingController();
+  final TextEditingController _firstDayCtrl = TextEditingController();
+  final TextEditingController _lastDayCtrl = TextEditingController();
+  final TextEditingController _timeStartCtrl = TextEditingController();
+  final TextEditingController _timeEndCtrl = TextEditingController();
+
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with current alert data
+    _loadCurrentLocation(); // Load real address from coordinates
+    
+    // Set default dates (today and tomorrow)
+    final now = DateTime.now();
+    final tomorrow = now.add(const Duration(days: 1));
+    
+    _firstDayCtrl.text = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    _lastDayCtrl.text = "${tomorrow.year.toString().padLeft(4, '0')}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
+    
+    // Set default times (current time and +2 hours)
+    _timeStartCtrl.text = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
+    _timeEndCtrl.text = "${now.add(const Duration(hours: 2)).hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
+  }
+
+  /// 🔰 NEW: Load real address from coordinates
+  Future<void> _loadCurrentLocation() async {
+    final location = widget.alert['location']?.toString() ?? '';
+    if (location.contains(',')) {
+      try {
+        final parts = location.split(',');
+        if (parts.length == 2) {
+          final lat = parts[0].trim();
+          final lon = parts[1].trim();
+          
+          final url = Uri.parse(
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
+          );
+
+          final response = await http.get(url, headers: {
+            'User-Agent': 'ChurppyApp/1.0'
+          });
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            final displayName = data['display_name']?.toString();
+            if (displayName != null && displayName.isNotEmpty) {
+              setState(() {
+                _addressCtrl.text = displayName;
+              });
+            } else {
+              _addressCtrl.text = location;
+            }
+          } else {
+            _addressCtrl.text = location;
+          }
+        } else {
+          _addressCtrl.text = location;
+        }
+      } catch (e) {
+        _addressCtrl.text = location;
+      }
+    } else {
+      _addressCtrl.text = location;
+    }
+  }
+
+  Future<void> _pickDate(TextEditingController controller) async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      String formatted =
+          "${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+      controller.text = formatted;
+    }
+  }
+
+  Future<void> _pickTime(TextEditingController controller) async {
+    TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (picked != null) {
+      final now = DateTime.now();
+      final dt =
+          DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+      String formatted =
+          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:00";
+      controller.text = formatted;
+    }
+  }
+
+  String? _validateDateTime() {
+  if (_firstDayCtrl.text.isEmpty ||
+      _lastDayCtrl.text.isEmpty ||
+      _timeStartCtrl.text.isEmpty ||
+      _timeEndCtrl.text.isEmpty) {
+    return null;
+  }
+
+  try {
+    final startDateTime =
+        DateTime.parse("${_firstDayCtrl.text} ${_timeStartCtrl.text}");
+    final endDateTime =
+        DateTime.parse("${_lastDayCtrl.text} ${_timeEndCtrl.text}");
+
+    final totalDuration = endDateTime.difference(startDateTime);
+
+    // 🟢 Minimum 10 minutes
+    if (totalDuration.inMinutes < 10) {
+      return "⚠️ Minimum alert duration should be 10 minutes";
+    }
+
+    // 🔴 Maximum 72 hours
+    if (totalDuration.inHours > 72) {
+      return "⚠️ Maximum alert duration should be 72 hours (3 days)";
+    }
+
+    return null;
+  } catch (e) {
+    return "⚠️ Invalid date/time format";
+  }
+}
+
+
+void _handleReactivate() {
+  // 🔰 Location check
+  if (_addressCtrl.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("⚠️ Please enter a location")),
+    );
+    return;
+  }
+
+  // 🔰 Duration validation
+  final dateTimeError = _validateDateTime();
+  if (dateTimeError != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(dateTimeError)),
+    );
+    return; // STOP HERE
+  }
+
+  // Continue to payment page
+  setState(() {
+    _isLoading = true;
+    _errorMessage = null;
+  });
+
+  widget.onReactivate(
+    _addressCtrl.text,
+    _firstDayCtrl.text,
+    _lastDayCtrl.text,
+    "${_timeStartCtrl.text} to ${_timeEndCtrl.text}",
+  );
+ Future.delayed(Duration(milliseconds: 100), () {
+  if (mounted) {
+    setState(() => _isLoading = false);
+  }
+});}
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: Row(
+          children: [
+            Image.asset('assets/images/logo.png', width: 100, height: 30),
+            const SizedBox(width: 10),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+              Row(
+                        children: [
+                          Image.asset("assets/images/bell_churppy.png", height: 70),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Reactivate Alert",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.purple.shade800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Update Alert Details",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "Current Plan: Single Use",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+            // Location Section with Autocomplete
+            Text(
+              "UPDATE LOCATION",
+              style: GoogleFonts.roboto(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+           
+            const SizedBox(height: 12),
+            AddressAutocompleteField(controller: _addressCtrl),
+
+            const SizedBox(height: 20),
+
+            // Dates Section
+            Row(
+              children: [
+                Text(
+                  "UPDATE DATES",
+                  style: GoogleFonts.roboto(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.calendar_today, size: 18, color: Colors.red),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _firstDayCtrl,
+                    readOnly: true,
+                    onTap: () => _pickDate(_firstDayCtrl),
+                    decoration: const InputDecoration(
+                      hintText: "START DATE",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _lastDayCtrl,
+                    readOnly: true,
+                    onTap: () => _pickDate(_lastDayCtrl),
+                    decoration: const InputDecoration(
+                      hintText: "END DATE",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Times Section
+            Row(
+              children: [
+                Text(
+                  "UPDATE TIMES",
+                  style: GoogleFonts.roboto(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.access_time, size: 18, color: Colors.red),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _timeStartCtrl,
+                    readOnly: true,
+                    onTap: () => _pickTime(_timeStartCtrl),
+                    decoration: const InputDecoration(
+                      hintText: "START TIME",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _timeEndCtrl,
+                    readOnly: true,
+                    onTap: () => _pickTime(_timeEndCtrl),
+                    decoration: const InputDecoration(
+                      hintText: "END TIME",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Validation Error
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: GoogleFonts.roboto(
+                          color: Colors.red.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 30),
+
+            // Reactivate Button
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _handleReactivate,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8DC63F),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        "REACTIVATE ALERT",
+                        style: GoogleFonts.roboto(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Cancel Button
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  side: const BorderSide(color: Colors.grey),
+                ),
+                child: Text(
+                  "CANCEL",
+                  style: GoogleFonts.roboto(
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class AlertsListScreen extends StatefulWidget {
   final String userId;
@@ -20,7 +599,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   List<dynamic> _filteredAlerts = [];
   bool _isLoading = true;
   bool _error = false;
-  Map<String, bool> _activatingAlerts = {}; // Track activating alerts
+  Map<String, bool> _activatingAlerts = {};
+  Map<String, bool> _reactivatingAlerts = {};
+  Map<String, bool> _favoritingAlerts = {};
 
   // ✅ Filter states
   String _currentFilter = 'all';
@@ -30,6 +611,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   String? firstName;
   String? lastName;
   bool _profileLoading = true;
+
+  // ✅ Favorite alerts storage key
+  static const String _favoriteAlertsKey = 'favorite_alerts';
 
   @override
   void initState() {
@@ -83,8 +667,12 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['status'] == 'success') {
+          // ✅ Load favorites from SharedPreferences and merge with API data
+          final List<dynamic> alerts = data['alerts'] ?? [];
+          await _loadFavoritesToAlerts(alerts);
+          
           setState(() {
-            _allAlerts = data['alerts'] ?? [];
+            _allAlerts = alerts;
             _applyFilter(_currentFilter);
             _isLoading = false;
             _error = false;
@@ -109,22 +697,89 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
   }
 
-  /// ✅ Apply filter to alerts - AUTO DETECT EXPIRED FROM BACKEND
+  /// ✅ Load favorites from SharedPreferences and merge with alerts
+  Future<void> _loadFavoritesToAlerts(List<dynamic> alerts) async {
+    final prefs = await SharedPreferences.getInstance();
+    final favoriteAlertsJson = prefs.getString(_favoriteAlertsKey);
+    
+    if (favoriteAlertsJson != null) {
+      try {
+        final Map<String, dynamic> favoriteAlerts = Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
+        
+        for (var alert in alerts) {
+          final alertId = alert['id']?.toString();
+          if (alertId != null && favoriteAlerts.containsKey(alertId)) {
+            alert['is_favorite'] = favoriteAlerts[alertId] == true ? '1' : '0';
+          } else {
+            alert['is_favorite'] = '0'; // Default to not favorite
+          }
+        }
+      } catch (e) {
+        print('Error loading favorites: $e');
+        // If there's an error, set all alerts to not favorite
+        for (var alert in alerts) {
+          alert['is_favorite'] = '0';
+        }
+      }
+    } else {
+      // If no favorites saved, set all alerts to not favorite
+      for (var alert in alerts) {
+        alert['is_favorite'] = '0';
+      }
+    }
+  }
+
+  /// ✅ Save favorite status to SharedPreferences
+  Future<void> _saveFavoriteToPrefs(String alertId, bool isFavorite) async {
+    final prefs = await SharedPreferences.getInstance();
+    final favoriteAlertsJson = prefs.getString(_favoriteAlertsKey);
+    
+    Map<String, dynamic> favoriteAlerts = {};
+    
+    if (favoriteAlertsJson != null) {
+      try {
+        favoriteAlerts = Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
+      } catch (e) {
+        print('Error parsing favorites: $e');
+        favoriteAlerts = {};
+      }
+    }
+    
+    if (isFavorite) {
+      favoriteAlerts[alertId] = true;
+    } else {
+      favoriteAlerts.remove(alertId);
+    }
+    
+    await prefs.setString(_favoriteAlertsKey, json.encode(favoriteAlerts));
+  }
+
+  /// 🔄 UPDATED: Apply filter to alerts - AUTO DETECT EXPIRED FROM DATES
   void _applyFilter(String filter) {
     setState(() {
       _currentFilter = filter;
       
-      // ✅ Backend se time_left check karke automatically expired detect karein
+      // ✅ Auto-detect expired alerts based on dates/times
       final now = DateTime.now();
       List<dynamic> updatedAlerts = List.from(_allAlerts);
       
       for (var alert in updatedAlerts) {
-        final timeLeft = alert['time_left']?.toString() ?? '';
         final currentStatus = alert['status']?.toString() ?? '0';
+        final startDate = alert['start_date']?.toString() ?? '';
+        final expiryDate = alert['expiry_date']?.toString() ?? '';
+        final startTime = alert['start_time']?.toString() ?? '';
+        final endTime = alert['end_time']?.toString() ?? '';
         
-        // ✅ Agar backend se "Expired" aa raha hai aur status active hai, toh update karein
-        if (timeLeft.toLowerCase().contains('expired') && currentStatus == '1') {
+        // ✅ Agar alert active hai (status 1) aur time khatam ho gaya hai, toh expired mark karein
+        if (currentStatus == '1' && _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
           alert['status'] = '2'; // Expired status set karein
+          alert['time_left'] = 'Expired'; // Time left update karein
+        }
+        
+        // ✅ Agar alert pending hai (status 0) aur time khatam ho gaya hai, toh expired mark karein
+        if (currentStatus == '0' && _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
+          alert['status'] = '2'; // Expired status set karein
+          alert['time_left'] = 'Expired'; // Time left update karein
         }
       }
       
@@ -140,10 +795,77 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         case 'expired':
           _filteredAlerts = _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '2').toList();
           break;
+        case 'favorites':
+          _filteredAlerts = _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).toList();
+          break;
         default:
           _filteredAlerts = List.from(_allAlerts);
       }
     });
+  }
+
+  /// 🔄 NEW: Check if alert is expired based on dates and times
+  bool _isAlertExpired(String startDate, String expiryDate, String startTime, String endTime) {
+  try {
+    // Clean formats:
+    // time format should always be HH:mm:ss
+    String cleanedStartTime = startTime.length == 5 ? "$startTime:00" : startTime;
+    String cleanedEndTime   = endTime.length == 5 ? "$endTime:00" : endTime;
+
+    // Build valid datetime:
+    final startDateTime = DateTime.parse("$startDate".split(' ')[0] + " " + cleanedStartTime);
+    final endDateTime   = DateTime.parse("$expiryDate".split(' ')[0] + " " + cleanedEndTime);
+
+    final now = DateTime.now();
+
+    return now.isAfter(endDateTime);
+  } catch (e) {
+    print("🔥 Corrected DateTime Error: $e");
+    return false;
+  }
+}
+
+
+  /// ✅ Toggle Favorite Status (Local Only - SharedPreferences)
+  Future<void> _toggleFavorite(String alertId, bool isCurrentlyFavorite) async {
+    setState(() {
+      _favoritingAlerts[alertId] = true;
+    });
+
+    try {
+      // ✅ Save to SharedPreferences
+      await _saveFavoriteToPrefs(alertId, !isCurrentlyFavorite);
+      
+      // ✅ Update local state
+      setState(() {
+        final alertIndex = _allAlerts.indexWhere((a) => a['id']?.toString() == alertId);
+        if (alertIndex != -1) {
+          _allAlerts[alertIndex]['is_favorite'] = isCurrentlyFavorite ? '0' : '1';
+          _applyFilter(_currentFilter); // Re-apply current filter
+        }
+      });
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isCurrentlyFavorite ? "❌ Removed from favorites" : "✅ Added to favorites"),
+          backgroundColor: isCurrentlyFavorite ? Colors.orange : const Color(0xFF8DC63F),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Failed to update favorite"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      setState(() {
+        _favoritingAlerts.remove(alertId);
+      });
+    }
   }
 
   /// ✅ Activate Alert API Call
@@ -204,62 +926,116 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
   }
 
-  /// ✅ Convert Coordinates to Complete Address Name
+  /// 🔰 UPDATED: Reactivate Expired Alert with Payment Integration
+  Future<void> _reactivateAlert(Map<String, dynamic> alert) async {
+    // Show reactivation screen first
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReactivateAlertScreen(
+          alert: alert,
+          onReactivate: (newLocation, startDate, endDate, timeRange) async {
+            // After reactivation details are entered, proceed to payment
+            await _processReactivationWithPayment(
+              alert,
+              newLocation,
+              startDate,
+              endDate,
+              timeRange,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 🔰 NEW: Process Reactivation with Payment Integration
+  Future<void> _processReactivationWithPayment(
+    Map<String, dynamic> alert,
+    String newLocation,
+    String startDate,
+    String endDate,
+    String timeRange,
+  ) async {
+    // Split time range back to separate times
+    final times = timeRange.split(' to ');
+    final startTime = times.isNotEmpty ? times[0] : '00:00:00';
+    final endTime = times.length > 1 ? times[1] : '23:59:59';
+
+    // Prepare alert data for payment
+    final alertData = {
+      'id': alert['id']?.toString() ?? '',
+      'merchant_id': widget.userId,
+      'location': newLocation,
+      'start_date': startDate,
+      'expiry_date': endDate,
+      'start_time': startTime,
+      'end_time': endTime,
+      'alert_type': alert['type']?.toString() ?? 'churppy',
+      'title': alert['title']?.toString() ?? '',
+      'description': alert['description']?.toString() ?? '',
+    };
+
+    // Navigate to payment screen
+    await Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => AlertPaymentScreen(
+      alertData: alertData,        // REQUIRED ✔
+      onPaymentSuccess: () async {  // REQUIRED ✔
+        await _fetchUserAlerts();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("✅ Alert reactivated successfully!"),
+            backgroundColor: Color(0xFF8DC63F),
+          ),
+        );
+      },
+    ),
+  ),
+  
+);
+
+  }
+
+  /// 🔰 UPDATED: Convert Coordinates to Complete Real Address Name
   Future<String> _getLocationName(String coordinates) async {
-    if (coordinates.isEmpty || !coordinates.contains(',')) {
+    if (coordinates.isEmpty) {
       return 'Location not set';
     }
 
-    try {
-      final parts = coordinates.split(',');
-      if (parts.length != 2) return coordinates;
-      
-      final lat = parts[0].trim();
-      final lon = parts[1].trim();
-      
-      final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
-      );
+    // If coordinates contain comma, it's lat,lon - convert to address
+    if (coordinates.contains(',')) {
+      try {
+        final parts = coordinates.split(',');
+        if (parts.length == 2) {
+          final lat = parts[0].trim();
+          final lon = parts[1].trim();
+          
+          final url = Uri.parse(
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
+          );
 
-      final response = await http.get(url, headers: {
-        'User-Agent': 'ChurppyApp/1.0'
-      });
+          final response = await http.get(url, headers: {
+            'User-Agent': 'ChurppyApp/1.0'
+          });
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        
-        // ✅ COMPLETE ADDRESS BANAYEIN
-        final address = data['address'];
-        final displayName = data['display_name']?.toString() ?? '';
-        
-        // Priority: display_name use karein (complete address)
-        if (displayName.isNotEmpty) {
-          return displayName;
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            final displayName = data['display_name']?.toString();
+            
+            if (displayName != null && displayName.isNotEmpty) {
+              return displayName;
+            }
+          }
         }
-        
-        // Agar display_name nahi hai toh manually build karein
-        List<String> addressParts = [];
-        
-        if (address['house_number'] != null) addressParts.add(address['house_number']);
-        if (address['road'] != null) addressParts.add(address['road']);
-        if (address['neighbourhood'] != null) addressParts.add(address['neighbourhood']);
-        if (address['suburb'] != null) addressParts.add(address['suburb']);
-        if (address['city'] != null) addressParts.add(address['city']);
-        if (address['state'] != null) addressParts.add(address['state']);
-        if (address['postcode'] != null) addressParts.add(address['postcode']);
-        if (address['country'] != null) addressParts.add(address['country']);
-        
-        if (addressParts.isNotEmpty) {
-          return addressParts.join(', ');
-        }
-        
-        return coordinates; // Fallback to original coordinates
+      } catch (e) {
+        print('Location conversion error: $e');
       }
-    } catch (e) {
-      print('Location conversion error: $e');
     }
     
-    return coordinates; // Return original if conversion fails
+    // If it's already an address or conversion failed, return as is
+    return coordinates;
   }
 
   /// ✅ Get Time Left from Backend (No calculation needed now)
@@ -278,9 +1054,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   /// ✅ Status color mapping
   Color _getStatusColor(String status) {
     switch (status) {
-      case '1': return const Color(0xFF8DC63F);
-      case '0': return Colors.orange;
-      case '2': return Colors.red;
+      case '1': return const Color(0xFF8DC63F); // Active - Green
+      case '0': return Colors.orange; // Pending - Orange
+      case '2': return Colors.red; // Expired - Red
       default: return Colors.grey;
     }
   }
@@ -292,22 +1068,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       case '0': return 'PENDING';
       case '2': return 'EXPIRED';
       default: return 'UNKNOWN';
-    }
-  }
-
-  /// ✅ Format date
-  String _formatDate(String date) {
-    if (date.isEmpty) return 'Not set';
-    try {
-      if (date.contains('-')) {
-        final parts = date.split('-');
-        if (parts.length == 3) {
-          return '${parts[1]}/${parts[2]}/${parts[0]}';
-        }
-      }
-      return date;
-    } catch (e) {
-      return date;
     }
   }
 
@@ -327,7 +1087,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                /// 🔰 Top Header
+                /// 🔰 UPDATED: Top Header with Logo
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                   child: Row(
@@ -378,18 +1138,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                 ),
 
                 /// 🔰 Page Title
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'My Alerts',
-                    style: GoogleFonts.roboto(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
+               
+                 
+              
 
                 /// 🔰 Back Button
                 Padding(
@@ -401,18 +1152,26 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         backgroundColor: Colors.grey.shade300,
                         child: IconButton(
                           icon: const Icon(Icons.arrow_back, size: 20, color: Colors.black),
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => DashboardScreen(), // Yahan apni screen ka naam do
+    ),
+  );
+},
+
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        "Back to Dashboard",
-                        style: GoogleFonts.roboto(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black54,
+                        'My Alerts',
+                   style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      fontStyle: FontStyle.italic,
                         ),
                       ),
                     ],
@@ -421,7 +1180,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
 
                 const SizedBox(height: 20),
 
-                /// 🔰 Stats Summary - TAPPABLE FILTERS
+                /// 🔰 Stats Summary - TAPPABLE FILTERS (INCLUDING FAVORITES)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
@@ -457,6 +1216,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                             _filterItem('Active', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '1').length.toString(), 'active', Icons.check_circle),
                             _filterItem('Pending', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '0').length.toString(), 'pending', Icons.schedule),
                             _filterItem('Expired', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '2').length.toString(), 'expired', Icons.cancel),
+                            _filterItem('Favorites', _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).length.toString(), 'favorites', Icons.favorite),
                           ],
                         ),
                       ],
@@ -526,7 +1286,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     return GestureDetector(
       onTap: () => _applyFilter(filter),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
@@ -540,9 +1300,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
               child: Icon(icon, size: 16, color: color),
             ),
             const SizedBox(height: 4),
-            Text(count, style: GoogleFonts.roboto(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+            Text(count, style: GoogleFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
             const SizedBox(height: 2),
-            Text(title, style: GoogleFonts.roboto(fontSize: 11, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, color: isSelected ? color : Colors.black54)),
+            Text(title, style: GoogleFonts.roboto(fontSize: 10, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, color: isSelected ? color : Colors.black54)),
           ],
         ),
       ),
@@ -555,7 +1315,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       case 'active': return const Color(0xFF8DC63F);
       case 'pending': return Colors.orange;
       case 'expired': return Colors.red;
-      default: return Colors.purple;
+      case 'favorites': return Colors.pink;
+      default: return Color(0xFF804692);
     }
   }
 
@@ -565,6 +1326,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       case 'active': return Icons.check_circle;
       case 'pending': return Icons.schedule;
       case 'expired': return Icons.cancel;
+      case 'favorites': return Icons.favorite;
       default: return Icons.list_alt;
     }
   }
@@ -619,14 +1381,11 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => SelectAlertScreen(),
-    ),
-  );
-},
-
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SelectAlertScreen()),
+              );
+            },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8DC63F), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             child: const Text("Create Alert", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
@@ -641,7 +1400,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: ListView.separated(
         itemCount: _filteredAlerts.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        separatorBuilder: (context, index) => const SizedBox(height: 16),
         itemBuilder: (context, index) {
           final alert = _filteredAlerts[index];
           return _alertCard(alert);
@@ -650,13 +1409,14 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     );
   }
 
-  /// 🔰 PROFESSIONAL ALERT CARD WITH ALL FEATURES
+  /// 🔰 PROFESSIONAL ALERT CARD WITH FAVORITE & REACTIVATE FUNCTIONALITY
   Widget _alertCard(Map<String, dynamic> alert) {
     final status = alert['status']?.toString() ?? '0';
     final title = alert['title']?.toString() ?? 'No Title';
     final description = alert['description']?.toString() ?? 'No Description';
     final location = alert['location']?.toString() ?? '';
     final alertId = alert['id']?.toString() ?? 'N/A';
+    final isFavorite = alert['is_favorite']?.toString() == '1';
     
     // ✅ Backend se time_left directly use karein
     final timeLeft = _getTimeLeftDisplay(alert);
@@ -674,120 +1434,156 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 0),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100, width: 1),
+            border: Border.all(
+              color: Colors.grey.shade200, 
+              width: 1.5
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withOpacity(0.08),
                 blurRadius: 12,
-                offset: const Offset(0, 3),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              /// 🔰 Glass Background Effect
+              /// 🔰 Status Header with Favorite Button
               Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withOpacity(0.95),
-                      Colors.white.withOpacity(0.85),
-                    ],
+                  color: statusColor.withOpacity(0.08),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: statusColor.withOpacity(0.2),
+                      width: 1,
+                    ),
                   ),
                 ),
-              ),
-
-              /// 🔰 Main Content
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  /// 🔰 Compact Header with Status
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.08),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(16),
-                        topRight: Radius.circular(16),
+                child: Row(
+                  children: [
+                    /// 🔰 Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: statusColor.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _getStatusText(status),
+                            style: GoogleFonts.roboto(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: statusColor,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        /// 🔰 Status Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    
+                    const Spacer(),
+                    
+                    /// 🔰 Favorite Button
+                    if (_favoritingAlerts[alertId] == true)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.pink),
+                        ),
+                      )
+                    else
+                      GestureDetector(
+                        onTap: () => _toggleFavorite(alertId, isFavorite),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: statusColor.withOpacity(0.3)),
+                            color: isFavorite ? Colors.pink.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isFavorite ? Colors.pink : Colors.grey,
+                              width: 1,
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: statusColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _getStatusText(status),
-                                style: GoogleFonts.roboto(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: statusColor,
-                                ),
-                              ),
-                            ],
+                          child: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            size: 18,
+                            color: isFavorite ? Colors.pink : Colors.grey,
                           ),
                         ),
-                        
-                        const Spacer(),
-                        
-                        /// 🔰 Alert ID
-                        Text(
-                          "#$alertId",
-                          style: GoogleFonts.roboto(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                      ),
+                    
+                    const SizedBox(width: 12),
+                    
+                    /// 🔰 Alert ID
+                    Text(
+                      "#$alertId",
+                      style: GoogleFonts.roboto(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  
-                  /// 🔰 Card Body
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
+                  ],
+                ),
+              ),
+              
+              /// 🔰 Card Content with Ample Padding
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// 🔰 Title and Description with Clear Separation
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        /// 🔰 Title and Description
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(6),
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: statusColor.withOpacity(0.1),
                                 shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: statusColor.withOpacity(0.2),
+                                  width: 1,
+                                ),
                               ),
                               child: Icon(
                                 Icons.campaign_rounded,
-                                size: 16,
+                                size: 18,
                                 color: statusColor,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -795,7 +1591,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                                   Text(
                                     title,
                                     style: GoogleFonts.roboto(
-                                      fontSize: 15,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.black87,
                                       height: 1.3,
@@ -803,13 +1599,13 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
                                   Text(
                                     description,
                                     style: GoogleFonts.roboto(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600,
-                                      height: 1.3,
+                                      fontSize: 13,
+                                      color: Colors.grey.shade700,
+                                      height: 1.4,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -819,97 +1615,75 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                             ),
                           ],
                         ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    /// 🔰 Divider for Clear Separation
+                    Container(
+                      height: 1,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.grey.shade100,
+                            Colors.grey.shade300,
+                            Colors.grey.shade100,
+                          ],
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    /// 🔰 Location and Time Details in Organized Layout
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ✅ Location - REAL ADDRESS
+                        _detailRow(
+                          Icons.location_on_outlined,
+                          "Location",
+                          displayLocation,
+                          Colors.blue.shade600,
+                        ),
                         
                         const SizedBox(height: 12),
                         
-                        /// 🔰 Location and Time Details
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: [
-                            // ✅ Location - COMPLETE ADDRESS
-                            _compactDetailChip(
-                              Icons.location_on_outlined,
-                              displayLocation,
-                              Colors.blue,
-                            ),
-                            
-                            // ✅ Time Left (backend se directly)
-                            if (timeLeft.isNotEmpty && timeLeft != 'Not set' && !isPending)
-                              _compactDetailChip(
-                                Icons.access_time_filled,
-                                timeLeft,
-                                isExpired ? Colors.red : const Color(0xFF8DC63F),
-                              ),
-                          ],
-                        ),
-                        
-                        /// 🔰 Activate Button for Pending Alerts
-                        if (isPending) ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFF8DC63F),
-                                  const Color(0xFF8DC63F).withOpacity(0.8),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF8DC63F).withOpacity(0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: _activatingAlerts[alertId] == true ? null : () => _activateAlert(alertId),
-                                borderRadius: BorderRadius.circular(10),
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    if (_activatingAlerts[alertId] == true)
-                                      const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                    else
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            "ACTIVATE ALERT",
-                                            style: GoogleFonts.roboto(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.white,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                        // ✅ Time Left (backend se directly)
+                        if (timeLeft.isNotEmpty && timeLeft != 'Not set' && !isPending)
+                          _detailRow(
+                            Icons.access_time_filled,
+                            isExpired ? "Expired" : "Time Left",
+                            timeLeft,
+                            isExpired ? Colors.red : const Color(0xFF8DC63F),
                           ),
-                        ],
                       ],
                     ),
-                  ),
-                ],
+                    
+                    /// 🔰 Action Buttons based on Alert Status
+                    if (isPending || isExpired) ...[
+                      const SizedBox(height: 20),
+                      if (isPending)
+                        _buildActionButton(
+                          "ACTIVATE ALERT",
+                          Icons.play_arrow_rounded,
+                          const Color(0xFF8DC63F),
+                          _activatingAlerts[alertId] == true,
+                          () => _activateAlert(alertId),
+                        ),
+                      
+                      if (isExpired)
+                        _buildActionButton(
+                          "REACTIVATE ALERT",
+                          Icons.refresh_rounded,
+                          Color(0xFF8DC63F),
+                          _reactivatingAlerts[alertId] == true,
+                          () => _reactivateAlert(alert),
+                        ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -918,26 +1692,117 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     );
   }
 
-  /// 🔰 Compact Detail Chip Widget
-  Widget _compactDetailChip(IconData icon, String text, Color color) {
+  /// 🔰 Action Button Widget
+  Widget _buildActionButton(String text, IconData icon, Color color, bool isLoading, VoidCallback onTap) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      width: double.infinity,
+      height: 44,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        gradient: LinearGradient(
+          colors: [
+            color,
+            color.withOpacity(0.9),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isLoading ? null : onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 18, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Text(
+                      text,
+                      style: GoogleFonts.roboto(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🔰 Professional Detail Row Widget
+  Widget _detailRow(IconData icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: color.withOpacity(0.15),
+          width: 1,
+        ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            text.length > 25 ? '${text.substring(0, 25)}...' : text,
-            style: GoogleFonts.roboto(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w500,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.roboto(
+                    fontSize: 11,
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: GoogleFonts.roboto(
+                    fontSize: 13,
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],

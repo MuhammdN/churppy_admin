@@ -54,7 +54,7 @@ class ChurppyPlansScreen extends StatefulWidget {
 
 class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   final Color purple = const Color(0xFF804692);
-  final Color green = const Color(0xFF1CC019);
+  final Color green = const Color(0xFF8DC63F);
 
   List<PackageModel> packages = [];
   bool isLoading = true;
@@ -74,12 +74,20 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   }
 
   Future<void> _loadMerchantId() async {
-    final prefs = await SharedPreferences.getInstance();
+  final prefs = await SharedPreferences.getInstance();
+
+  // Ab OPTION 2 ke mutabiq user_id hi save hota hai  
+  final mId = prefs.getString("user_id");
+
+  if (mId != null) {
     setState(() {
-      merchantId = prefs.getString("merchant_id");
+      merchantId = mId;
     });
-    debugPrint("✅ Loaded merchant_id: $merchantId");
+
+    debugPrint("✅ Loaded user_id (merchantId): $merchantId");
   }
+}
+
 
   Future<void> fetchPackages() async {
     try {
@@ -190,7 +198,10 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          title: const Text("Choose Plan Type"),
+          title: Text(
+            "Choose Plan Type",
+            style: GoogleFonts.inter(),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -220,11 +231,14 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
               child: const Text("CANCEL"),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF8DC63F),
+              ),
               onPressed: () {
                 Navigator.pop(ctx);
                 savePlan();
               },
-              child: const Text("OK"),
+              child: const Text("OK", style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -235,7 +249,9 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   Future<void> savePlan() async {
     if (merchantId == null || selectedPackageId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Merchant ID or package not selected")),
+        const SnackBar(
+          content: Text("Merchant ID or package not selected"),
+        ),
       );
       return;
     }
@@ -245,7 +261,9 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
 
     if (stripeAmount <= 0 || dbAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Invalid package or amount")),
+        const SnackBar(
+          content: Text("Invalid package or amount"),
+        ),
       );
       return;
     }
@@ -257,7 +275,9 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
       if (clientSecret == null) {
         setState(() => isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to create payment intent")),
+          const SnackBar(
+            content: Text("Failed to create payment intent"),
+          ),
         );
         return;
       }
@@ -288,7 +308,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(data["message"] ?? "Plan saved"),
-            backgroundColor: Colors.green,
+            backgroundColor: const Color(0xFF8DC63F),
           ),
         );
 
@@ -305,9 +325,23 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
       }
     } catch (e) {
       debugPrint("Error saving plan: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Error: $e")),
-      );
+
+      // Handle payment cancellation specifically
+      if (e is StripeException && e.error.code == FailureCode.Canceled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Payment was cancelled"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Payment failed: ${e.toString()}"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       setState(() => isSaving = false);
     }
@@ -334,12 +368,14 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildHeader(context),
-                            const Padding(
-                              padding: EdgeInsets.all(16),
+                            Padding(
+                              padding: const EdgeInsets.all(25),
                               child: Text(
                                 'SELECT YOUR PLAN',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 18),
+                                style: GoogleFonts.lemon(
+                                  fontWeight: FontWeight.w700, 
+                                  fontSize: 18
+                                ),
                               ),
                             ),
                             Padding(
@@ -347,32 +383,58 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
                               child: _plansTable(),
                             ),
                             const SizedBox(height: 20),
-                            Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: green,
-                                  minimumSize: const Size(double.infinity, 60),
-                                ),
-                                onPressed: () {
-                                  if (selectedPackageId == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text("Please select a plan")),
-                                    );
-                                    return;
-                                  }
-                                  _selectPlanTypeDialog();
-                                },
-                                child: const Text(
-                                  "GO GET CHURPPY",
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 20),
-                                ),
-                              ),
-                            ),
+                           Padding(
+  padding: const EdgeInsets.only(top:20),
+  child: Align(
+    alignment: Alignment.centerLeft, // Align to left side
+    child: Container(
+      height: 100,
+      width: 250, // Fixed width as shown in screenshot
+      decoration: BoxDecoration(
+        color: const Color(0xFF8DC63F),
+       borderRadius: const BorderRadius.only(
+      topRight: Radius.circular(15),
+      bottomRight: Radius.circular(15),
+    ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(30),
+          onTap: () {
+            if (selectedPackageId == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Please select a plan"),
+                ),
+              );
+              return;
+            }
+            _selectPlanTypeDialog();
+          },
+          child: Center(
+            child: Text(
+              "GO GET CHURPPY",
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 24, // Slightly smaller font size
+                letterSpacing: 0.1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+),
                           ],
                         ),
                       ),
@@ -392,34 +454,30 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-  return Padding(
-    padding: const EdgeInsets.all(14),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // ✅ Left Menu Icon (unchanged)
-        GestureDetector(
-          onTap: () {},
-          child: Image.asset('assets/icons/menu.png', width: 40),
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          GestureDetector(
+            onTap: () {},
+            child: Image.asset('assets/icons/menu.png', width: 40),
+          ),
 
-        // ✅ Center Logo (kept same)
-        Expanded(
-          child: Center(
-            child: Image.asset(
-              'assets/images/logo.png',
-              width: 100,
+          Expanded(
+            child: Center(
+              child: Image.asset(
+                'assets/images/logo.png',
+                width: 100,
+              ),
             ),
           ),
-        ),
 
-        // 🚫 Removed truck.png (kept alignment clean)
-        const SizedBox(width: 40), // keeps same spacing on right side
-      ],
-    ),
-  );
-}
-
+          const SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
 
   Widget _plansTable() {
     if (packages.length < 3) {
@@ -431,14 +489,14 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
     final enterprise = packages[2];
 
     final border = TableBorder.all(color: Colors.black54, width: 1);
-    final headerBg = const Color(0xFFE7F6EA);
 
     Text _th(String t, {Color? color}) => Text(
           t,
-          style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 12.5,
-              color: color ?? Colors.black),
+          style: GoogleFonts.lemon(
+            fontWeight: FontWeight.w800,
+            fontSize: 12.5,
+            color: color ?? Colors.black,
+          ),
           textAlign: TextAlign.center,
         );
 
@@ -450,7 +508,11 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         child: Text(
           t,
-          style: TextStyle(fontSize: 12.5, fontWeight: w, color: c ?? Colors.black),
+          style: GoogleFonts.poppins(
+            fontSize: 12.5, 
+            fontWeight: w, 
+            color: c ?? Colors.black
+          ),
           textAlign: ta,
         ),
       );
@@ -470,9 +532,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           _cell(''),
           _th(essentials.packageName),
           _th(business.packageName, color: purple),
-          Container(
-              color: headerBg,
-              child: _th(enterprise.packageName, color: green)),
+          _th(enterprise.packageName, color: const Color(0xFF8DC63F)), // ✅ Removed grey background
         ]),
         TableRow(children: [
           _cell('Churppy Alerts', w: FontWeight.w700, c: purple),
@@ -487,7 +547,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           _cell(enterprise.customAlerts),
         ]),
         TableRow(children: [
-          _cell('Menu/Service'),
+          _cell('Upload PDF'),
           _cell(essentials.services),
           _cell(business.services),
           _cell(enterprise.services),
@@ -505,13 +565,13 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           _cell(enterprise.monthly, w: FontWeight.w900),
         ]),
         TableRow(children: [
-          _cell('Annual Save 10%', w: FontWeight.w800, c: green),
+          _cell('Annual Save 10%', w: FontWeight.w800, c: const Color(0xFF8DC63F)),
           _cell(essentials.annualSave),
           _cell(business.annualSave),
           _cell(enterprise.annualSave),
         ]),
         TableRow(children: [
-          _cell('SELECT PLAN', w: FontWeight.w800),
+          _cell('SELECT PLAN', w: FontWeight.w600),
           _selectCell(packageId: essentials.packageId),
           _selectCell(packageId: business.packageId),
           _selectCell(packageId: enterprise.packageId),
@@ -529,7 +589,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           onChanged: (v) {
             setState(() => selectedPackageId = v);
           },
-          activeColor: green,
+          activeColor: const Color(0xFF8DC63F),
         ),
       ),
     );

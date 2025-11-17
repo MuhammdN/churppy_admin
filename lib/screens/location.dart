@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'drawer.dart';
 import 'Review_Churppy_Screen.dart';
@@ -43,7 +44,7 @@ class AlertModel {
   });
 }
 
-/// 🔰 AddressAutocompleteField
+/// 🔰 UPDATED: New AddressAutocompleteField with country restriction and current location
 class AddressAutocompleteField extends StatefulWidget {
   final TextEditingController controller;
   const AddressAutocompleteField({super.key, required this.controller});
@@ -54,14 +55,59 @@ class AddressAutocompleteField extends StatefulWidget {
 }
 
 class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
-  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
-    if (query.isEmpty) return [];
+  String? _currentCountryCode;
+  Position? _currentPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocationAndCountry();
+  }
+
+  // 🧭 Current location & country
+  Future<void> _getUserLocationAndCountry() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    _currentPosition = pos;
 
     final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&addressdetails=1&limit=6');
+        'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json');
+    final resp = await http.get(uri, headers: {
+      'User-Agent': 'ChurppyAdmin/1.0 (admin@churppy.com)',
+    });
+
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body);
+      final countryCode = data['address']?['country_code']?.toString().toUpperCase();
+      setState(() {
+        _currentCountryCode = countryCode;
+        // Auto-fill address with current location
+        widget.controller.text = data['display_name'] ?? '';
+      });
+    }
+  }
+
+  // 📍 Fetch suggestions limited to current country
+  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
+    if (query.isEmpty || _currentCountryCode == null) return [];
+
+    final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&countrycodes=${_currentCountryCode!.toLowerCase()}&format=json&addressdetails=1&limit=6');
 
     final resp = await http.get(uri, headers: {
-      'User-Agent': 'MyFlutterApp/1.0 (your-email@example.com)'
+      'User-Agent': 'ChurppyAdmin/1.0 (admin@churppy.com)',
     });
 
     if (resp.statusCode == 200) {
@@ -70,6 +116,15 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
     } else {
       return [];
     }
+  }
+
+  // 📍 Use current location (lat,lon)
+  Future<void> useCurrentLocation() async {
+    final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    setState(() {
+      widget.controller.text = "${pos.latitude},${pos.longitude}";
+    });
+    _getUserLocationAndCountry();
   }
 
   @override
@@ -82,42 +137,76 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
           focusNode: focusNode,
           decoration: InputDecoration(
             hintText: "Search Address",
-            hintStyle:
-                const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            hintStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            errorText: null,
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.my_location),
+              onPressed: useCurrentLocation,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
               borderSide: const BorderSide(width: 2, color: Colors.black),
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
         );
       },
       suggestionsCallback: fetchSuggestions,
       itemBuilder: (context, suggestion) {
-        final address = suggestion['address'] ?? {};
-        final sub = [
-          address['road'],
-          address['neighbourhood'],
-          address['suburb'],
-          address['city'],
-          address['state'],
-          address['country']
+        final addr = suggestion['address'] ?? {};
+        final street = [
+          addr['road'],
+          addr['pedestrian'],
+          addr['footway'],
+          addr['residential']
         ].where((e) => e != null).join(", ");
 
+        final locality = [
+          addr['suburb'],
+          addr['city'],
+          addr['town'],
+          addr['village']
+        ].where((e) => e != null).join(", ");
+
+        final display = [street, locality]
+            .where((e) => e.isNotEmpty)
+            .join(", ");
+
         return ListTile(
-          title: Text(suggestion['display_name'] ?? ''),
-          subtitle: Text(sub),
+          title: Text(display.isNotEmpty
+              ? display
+              : suggestion['display_name'] ?? ''),
         );
       },
       onSelected: (suggestion) {
-        final lat = suggestion['lat']?.toString() ?? "";
-        final lon = suggestion['lon']?.toString() ?? "";
-        widget.controller.text = "$lat,$lon";
-        debugPrint("✅ Selected LatLon: $lat,$lon");
+        final addr = suggestion['address'] ?? {};
+        final street = [
+          addr['road'],
+          addr['pedestrian'],
+          addr['footway'],
+          addr['residential']
+        ].where((e) => e != null).join(", ");
+
+        final locality = [
+          addr['suburb'],
+          addr['city'],
+          addr['town'],
+          addr['village']
+        ].where((e) => e != null).join(", ");
+
+        final display = [street, locality]
+            .where((e) => e.isNotEmpty)
+            .join(", ");
+
+        setState(() {
+          widget.controller.text = display.isNotEmpty
+              ? display
+              : suggestion['display_name'] ?? '';
+        });
       },
-      emptyBuilder: (context) =>
-          const ListTile(title: Text('No results found')),
+      emptyBuilder: (context) => const ListTile(
+        title: Text('No results found'),
+      ),
     );
   }
 }
@@ -610,8 +699,20 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                               ),
                               child: Row(
                                 children: [
-                                  Image.asset('assets/images/truck.png',
-                                      height: 60, width: 60),
+                                  profileImage != null
+          ? ClipRRect(
+             borderRadius: BorderRadius.zero,
+              child: Image.network(
+                profileImage!,
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                errorBuilder: (c, o, s) {
+                  return const Icon(Icons.person, size: 40, color: Colors.grey);
+                },
+              ),
+            )
+          : const Icon(Icons.person, size: 40, color: Colors.grey),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -676,6 +777,7 @@ class _LocationAlertStep2ScreenState extends State<LocationAlertStep2Screen> {
                             ),
                             const SizedBox(height: 16),
 
+                            // ✅ UPDATED: New AddressAutocompleteField with all features from SignupScreen
                             SizedBox(
                               height: 50,
                               child: AddressAutocompleteField(

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
+import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,7 @@ class ReviewChurppyScreen extends StatefulWidget {
 class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
   String? userId;
   bool _isLoading = false;
+  String? profileImage;
   String alert = "";
   String _locationName = "Loading location..."; // 🔰 Store location name
   bool _isFetchingLocation = true; // 🔰 Track location fetching
@@ -72,7 +74,39 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     if (full.isNotEmpty) return full;
     return "";
   }
-
+/// ✅ Fetch user profile image
+Future<void> _fetchProfileImage(String id) async {
+  try {
+    final url = Uri.parse(
+      "https://churppy.eurekawebsolutions.com/api/user.php?id=$id",
+    );
+    final response = await http.get(url);
+    
+    if (response.statusCode == 200) {
+      final jsonData = jsonDecode(response.body);
+      if (jsonData['status'] == 'success' && jsonData['data'] is Map) {
+        final userData = jsonData['data'] as Map<String, dynamic>;
+        
+        // Try different possible keys for profile image
+        final imagePath = userData['profile_image'] ?? 
+                         userData['image'] ?? 
+                         userData['avatar'] ?? 
+                         userData['photo'];
+        
+        if (imagePath != null && imagePath.toString().isNotEmpty) {
+          setState(() {
+            profileImage = _abs(imagePath.toString());
+          });
+          debugPrint("✅ Profile image loaded: $profileImage");
+        } else {
+          debugPrint("ℹ️ No profile image found for user");
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint("❌ Error fetching profile image: $e");
+  }
+}
   /// ✅ Try user_with_merchant first (can contain business info),
   /// then fallback to users.php (your provided endpoint) for at least a name
   Future<void> _fetchBusinessName(String id) async {
@@ -129,20 +163,21 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
   }
 
   Future<void> _loadUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUserId = prefs.getString("user_id");
-    setState(() => userId = savedUserId);
+  final prefs = await SharedPreferences.getInstance();
+  final savedUserId = prefs.getString("user_id");
+  setState(() => userId = savedUserId);
 
-    if (savedUserId != null) {
-      await _fetchBusinessName(savedUserId);
-    }
-
-    debugPrint("✅ SharedPref User ID (ReviewChurppyScreen): $savedUserId");
-    debugPrint("✅ Data received: "
-        "${widget.alert.title}, ${widget.alert.description}, ${widget.alert.location}, "
-        "Radius: ${widget.alert.radius}, Image: ${widget.alert.imageName}, "
-        "AlertType: ${widget.alert.alertType}, Discount: ${widget.alert.discount}");
+  if (savedUserId != null) {
+    await _fetchBusinessName(savedUserId);
+    await _fetchProfileImage(savedUserId); // ✅ ADD THIS LINE
   }
+
+  debugPrint("✅ SharedPref User ID (ReviewChurppyScreen): $savedUserId");
+  debugPrint("✅ Data received: "
+      "${widget.alert.title}, ${widget.alert.description}, ${widget.alert.location}, "
+      "Radius: ${widget.alert.radius}, Image: ${widget.alert.imageName}, "
+      "AlertType: ${widget.alert.alertType}, Discount: ${widget.alert.discount}");
+}
 
   String formatDate(String rawDate) {
     try {
@@ -961,7 +996,7 @@ if (status == 1 || status == 0) {
                                                     Icon(Icons.access_time, size: 12, color: Colors.grey.shade600),
                                                     const SizedBox(width: 4),
                                                     Text(
-                                                      "${formatDate(widget.alert.startDate)} • ${formatTime(widget.alert.startTime)} - ${formatTime(widget.alert.endTime)}",
+                                                      _timeRemaining,
                                                       style: GoogleFonts.roboto(
                                                         fontSize: 11,
                                                         color: Colors.grey.shade600,
@@ -1126,16 +1161,32 @@ if (status == 1 || status == 0) {
               ],
             ),
           ),
-          ClipOval(
-            child: Image.network(
-              _abs(widget.alert.imageName),
-              width: 40,
-              height: 40,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  Image.asset('assets/images/truck.png', width: 50, height: 50),
-            ),
-          ),
+           /// ✅ RIGHT — PROFILE IMAGE
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ProfileScreen()),
+                            );
+                          },
+                          child: profileImage != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(50),
+                                  child: Image.network(
+                                    profileImage!,
+                                    width: 50,
+                                    height: 50,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, o, s) {
+                                      return const Icon(Icons.person,
+                                          size: 70, color: Colors.grey);
+                                    },
+                                  ),
+                                )
+                              : const Icon(Icons.person,
+                                  size: 70, color: Colors.grey),
+                        ),
         ],
       ),
     );

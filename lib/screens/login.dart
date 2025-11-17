@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:churppy_admin/screens/forgot_password_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -124,6 +125,15 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => isLoading = false);
     }
   }
+  /// ✅ Forgot Password Handler
+void _handleForgotPassword() {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const ForgotPasswordScreen(),
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -230,8 +240,27 @@ class _LoginScreenState extends State<LoginScreen> {
                                     _field("Password", passwordCtrl,
                                         obscure: true,
                                         error: _errors['password']),
-                                    const SizedBox(height: 24),
-
+                                    
+ const SizedBox(height: 2),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _handleForgotPassword,
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Forgot Password?',
+                                  style: TextStyle(
+                                    color: Color(0xFF804692),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ),
                                     SizedBox(
                                       height: 48,
                                       child: FilledButton(

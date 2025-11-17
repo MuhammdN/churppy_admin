@@ -3,13 +3,12 @@ import 'package:churppy_admin/screens/AlertsListScreen.dart';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
+import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'drawer.dart';
-
-
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -20,8 +19,6 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   String? userId;
-
-  // ✅ NEW
   String? profileImage;
   String? firstName;
   String? lastName;
@@ -32,6 +29,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int orderReceived = 0;
 
   bool isLoading = true;
+
+  // ✅ New filter dropdown value
+  String selectedFilter = "all";
+  final List<Map<String, String>> filterOptions = [
+    {"label": "All Time", "value": "all"},
+    {"label": "Weekly", "value": "week"},
+    {"label": "Monthly", "value": "month"},
+    {"label": "Yearly", "value": "year"},
+  ];
 
   @override
   void initState() {
@@ -51,15 +57,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     if (savedUserId != null) {
-      await _fetchUserProfile(savedUserId);     // ✅ NEW
-      _fetchDashboardData(savedUserId);
+      await _fetchUserProfile(savedUserId);
+      _fetchDashboardData(savedUserId, selectedFilter);
     }
   }
 
   /// ✅ Fetch User Profile
   Future<void> _fetchUserProfile(String uid) async {
-    final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+    final url =
+        Uri.parse("https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
 
     try {
       final res = await http.get(url);
@@ -72,7 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final data = result["data"];
 
           setState(() {
-            profileImage = data["image"];     // ✅ full URL already
+            profileImage = data["image"];
             firstName = data["first_name"];
             lastName = data["last_name"];
           });
@@ -83,15 +89,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  /// ✅ Dashboard API call
-  Future<void> _fetchDashboardData(String uid) async {
-    final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
+  /// ✅ Dashboard API call (now with filter)
+  Future<void> _fetchDashboardData(String uid, String filter) async {
+    setState(() => isLoading = true);
+    final url =
+        Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
 
     try {
-      final response = await http.post(url, body: {"user_id": uid});
+      final response = await http.post(url, body: {
+        "user_id": uid,
+        "filter": filter,
+      });
 
-      debugPrint("📥 Raw Response: ${response.body}");
+      debugPrint("📥 Raw Dashboard Response: ${response.body}");
 
       if (response.statusCode == 200) {
         final result = json.decode(response.body);
@@ -179,12 +189,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
 
-                        /// ✅ RIGHT — PROFILE IMAGE (NOW TAPPABLE)
+                        /// ✅ RIGHT — PROFILE IMAGE
                         GestureDetector(
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                              MaterialPageRoute(
+                                  builder: (_) => const ProfileScreen()),
                             );
                           },
                           child: profileImage != null
@@ -197,7 +208,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     fit: BoxFit.cover,
                                     errorBuilder: (c, o, s) {
                                       return const Icon(Icons.person,
-                                          size: 70, color: Colors.grey);
+                                          size: 45, color: Colors.grey);
                                     },
                                   ),
                                 )
@@ -207,22 +218,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
 
                   /// 🔰 Page Title
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Text(
-                      'Dashboard',
-                      style: GoogleFonts.roboto(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Dashboard',
+                          style: GoogleFonts.roboto(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+
+                        /// ✅ Filter Dropdown
+                        DropdownButton<String>(
+                          value: selectedFilter,
+                          icon: const Icon(Icons.filter_list, color: Colors.purple),
+                          underline: const SizedBox(),
+                          items: filterOptions.map((opt) {
+                            return DropdownMenuItem<String>(
+                              value: opt["value"],
+                              child: Text(opt["label"]!,
+                                  style: GoogleFonts.roboto(fontSize: 14)),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null && userId != null) {
+                              setState(() => selectedFilter = val);
+                              _fetchDashboardData(userId!, val);
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  /// 🔰 Tappable Alert Banner
+                  /// 🔰 SEND ALERT BANNER
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: GestureDetector(
@@ -230,7 +267,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const SelectAlertScreen()),
+                              builder: (_) =>  SelectAlertScreen()),
                         );
                       },
                       child: Row(
@@ -264,61 +301,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                   ),
+                  SizedBox(height: 25),
+                 Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 20),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        "3 Simple Steps",
+        style: GoogleFonts.roboto(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        "1. Select Alert",
+        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        "2. Enter Location, Day(s) and Hours of Operation",
+        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        "3. Review",
+        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
+      ),
+     
 
-                  const SizedBox(height: 20),
+     
+    ],
+  ),
+),
 
-                  /// 🔰 4 Simple Steps
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "4 Simple Steps",
-                          style: GoogleFonts.roboto(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.black,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _stepText("1. Select Alert"),
-                        _stepText(
-                            "2. Enter Location, Day(s) and Hours of Operation"),
-                        _stepText("3. Review"),
-                        _stepText("4. Send Churppy Alert"),
-                      ],
-                    ),
-                  ),
+                
+SizedBox(height: 25),
+                  
+    Center(
+  child: SizedBox(
+    width: 350, 
+    child: DottedLine(
+      dashColor: Color(0xFF804692),
+      lineThickness: 2,
+      dashLength: 20,
+      dashGapLength: 4,
+    ),
+  ),
+),
 
-                  const SizedBox(height: 14),
-
-                  /// Purple dashed divider
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final dashWidth = 9.0;
-                          final dashCount =
-                              (constraints.maxWidth / (2 * dashWidth)).floor();
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: List.generate(dashCount, (_) {
-                              return Container(
-                                width: dashWidth,
-                                height: 3,
-                                color: Colors.purple,
-                              );
-                            }),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
+    SizedBox(height: 25),
                   /// 🔰 Stats Section
                   isLoading
                       ? const Center(child: CircularProgressIndicator())
@@ -326,7 +360,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Column(
                             children: [
-                              // ✅ TAPPABLE TOTAL CHURPPY ALERTS
                               GestureDetector(
                                 onTap: _navigateToAlertsList,
                                 child: _statBox(
@@ -341,20 +374,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 icon: Icons.person_outline,
                                 title: 'Total Customers',
                                 count: totalCustomers.toString(),
-                                color: Colors.purple,
+                                color: Color(0xFF804692),
                               ),
                               const SizedBox(height: 10),
                               _statBox(
-                                icon: Icons.remove_red_eye_outlined,
+                                icon: Icons.star,
                                 title: 'Order Received',
                                 count: orderReceived.toString(),
-                                color: Colors.grey,
+                                color: Colors.orangeAccent,
                               ),
                             ],
                           ),
                         ),
+SizedBox(height: 25),
+                  
+    Center(
+  child: SizedBox(
+    width: 350, 
+    child: DottedLine(
+      dashColor: Color(0xFF804692),
+      lineThickness: 2,
+      dashLength: 20,
+      dashGapLength: 4,
+    ),
+  ),
+),
 
-                  const SizedBox(height: 20),
+    SizedBox(height: 25),
 
                   /// 🔰 Footer
                   Center(
@@ -364,7 +410,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           "LET US CUSTOMIZE ALERTS FOR YOU!",
                           style: GoogleFonts.roboto(
                             fontWeight: FontWeight.bold,
-                            color: Colors.purple,
+                            color: Color(0xFF804692),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -389,6 +435,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                         ),
+                        SizedBox(height: 20),
+
+    
                       ],
                     ),
                   ),
@@ -403,7 +452,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 🔰 Stat Box Widget - EXACTLY SAME AS BEFORE
+  /// 🔰 Stat Box Widget
   Widget _statBox({
     required IconData icon,
     required String title,
@@ -458,19 +507,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           )
         ],
-      ),
-    );
-  }
-
-  Widget _stepText(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        text,
-        style: GoogleFonts.roboto(
-          fontSize: 14,
-          color: Colors.black87,
-        ),
       ),
     );
   }
