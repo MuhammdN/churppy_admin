@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,8 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     alert = widget.alert.title;
     _getLocationNameFromCoordinates(); // 🔰 Get location name on init
     _calculateTimeRemaining(); // 🔰 Calculate dynamic time remaining
+     _audioPlayer.setReleaseMode(ReleaseMode.stop);
+  _audioPlayer.setVolume(1.0);
   }
 
   /// ✅ Convert relative image name to full URL
@@ -290,6 +293,23 @@ Future<void> _fetchProfileImage(String id) async {
       });
     }
   }
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+Future<void> _playDing() async {
+  try {
+    await _audioPlayer.setReleaseMode(ReleaseMode.stop); // mandatory for iOS
+    await _audioPlayer.setVolume(1.0);
+
+    debugPrint("🔔 Trying to play: assets/sounds/1.wav");
+    await _audioPlayer.play(
+      AssetSource('sounds/1.wav'),
+    );
+
+    debugPrint("✅ Sound PLAYED");
+  } catch (e) {
+    debugPrint("❌ SOUND ERROR: $e");
+  }
+}
 
   /// 🔰 NEW: Calculate dynamic time remaining based on dates and times
   void _calculateTimeRemaining() {
@@ -503,16 +523,22 @@ Future<void> _fetchProfileImage(String id) async {
         final msg = jsonData['message']?.toString() ?? "";
         final statusStr = jsonData['status']?.toString().toLowerCase();
 
-        // ✅ SUCCESS RESPONSE
-        if (statusStr == 'success') {
-          final remain = jsonData['remaining'];
-          final max = jsonData['max_limit'];
-          final alertStatus = jsonData['status'] ?? status;
+     
 
-          // ✅ UPDATED: Different success messages based on status
-          final successMessage = status == 1 
-              ? "Alert created and activated successfully!" 
-              : "Alert saved as draft successfully!";
+  final apiStatus = jsonData['status'];
+
+if (apiStatus == 1 || apiStatus == "1") {
+
+  // Play sound
+  _playDing();
+  debugPrint("🔔 SOUND PLAY TRIGGERED");
+
+  final remain = jsonData['remaining'];
+  final max = jsonData['max_limit'];
+
+  final successMessage = status == 1
+      ? "Alert created and activated successfully!"
+      : "Alert saved as draft successfully!";
 
           showDialog(
             context: context,

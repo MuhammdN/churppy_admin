@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:churppy_admin/screens/dashboard_screen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/reactivate_payment_screen.dart';
@@ -31,6 +32,7 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
   void initState() {
     super.initState();
     _getUserLocationAndCountry();
+    
   }
 
   Future<void> _getUserLocationAndCountry() async {
@@ -728,7 +730,23 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       }
     }
   }
+final AudioPlayer _audioPlayer = AudioPlayer();
 
+Future<void> _playDing() async {
+  try {
+    await _audioPlayer.setReleaseMode(ReleaseMode.stop); // mandatory for iOS
+    await _audioPlayer.setVolume(1.0);
+
+    debugPrint("🔔 Trying to play: assets/sounds/1.wav");
+    await _audioPlayer.play(
+      AssetSource('sounds/1.wav'),
+    );
+
+    debugPrint("✅ Sound PLAYED");
+  } catch (e) {
+    debugPrint("❌ SOUND ERROR: $e");
+  }
+}
   /// ✅ Save favorite status to SharedPreferences
   Future<void> _saveFavoriteToPrefs(String alertId, bool isFavorite) async {
     final prefs = await SharedPreferences.getInstance();
@@ -888,6 +906,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         final data = jsonDecode(response.body);
         
         if (data['status'] == 'success') {
+            _playDing();
+  debugPrint("🔔 SOUND PLAY TRIGGERED");
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -984,6 +1004,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       alertData: alertData,        // REQUIRED ✔
       onPaymentSuccess: () async {  // REQUIRED ✔
         await _fetchUserAlerts();
+         _playDing();
+  debugPrint("🔔 SOUND PLAY TRIGGERED");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("✅ Alert reactivated successfully!"),
@@ -1156,7 +1178,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (context) => DashboardScreen(), // Yahan apni screen ka naam do
+      builder: (context) => DashboardScreen(), 
     ),
   );
 },

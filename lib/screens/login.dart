@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'package:churppy_admin/screens/churppy_alert_plan.dart';
 import 'package:churppy_admin/screens/forgot_password_screen.dart';
+import 'package:churppy_admin/screens/google_login_service.dart.dart';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:country_picker/country_picker.dart'; // ✅ new package
+import 'package:country_picker/country_picker.dart';
 
 import '../routes.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,15 +23,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordCtrl = TextEditingController();
   final TextEditingController phoneCtrl = TextEditingController();
 
-  Country? selectedCountry; // ✅ changed from manual flag/code
-
+  Country? selectedCountry;
   bool isLoading = false;
+  bool socialLoading = false;
+
   final Map<String, String?> _errors = {};
 
   @override
   void initState() {
     super.initState();
-    // ✅ default = US 🇺🇸
     selectedCountry = Country(
       phoneCode: '1',
       countryCode: 'US',
@@ -42,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// ✅ Validate Inputs (same logic)
+  // ------------------ VALIDATION ------------------
   bool _validateInputs() {
     _errors.clear();
 
@@ -53,15 +57,14 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       if (emailCtrl.text.trim().isEmpty) {
         _errors['email'] = "Email is required";
-      } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-          .hasMatch(emailCtrl.text.trim())) {
+      } else if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(emailCtrl.text.trim())) {
         _errors['email'] = "Enter a valid email";
       }
     }
 
     if (passwordCtrl.text.trim().isEmpty) {
       _errors['password'] = "Password is required";
-    } else if (passwordCtrl.text.trim().length < 6) {
+    } else if (passwordCtrl.text.length < 6) {
       _errors['password'] = "Password must be at least 6 characters";
     }
 
@@ -69,42 +72,34 @@ class _LoginScreenState extends State<LoginScreen> {
     return _errors.isEmpty;
   }
 
-  /// ✅ Admin Login API (unchanged)
+  // ------------------ NORMAL LOGIN ------------------
   Future<void> _login() async {
     if (!_validateInputs()) return;
 
     setState(() => isLoading = true);
+
     final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_login.php");
 
     final requestBody = {
       if (phoneCtrl.text.trim().isNotEmpty)
-        "phone_number": "+${selectedCountry?.phoneCode ?? '1'}${phoneCtrl.text.trim()}",
-      if (phoneCtrl.text.trim().isEmpty)
-        "email": emailCtrl.text.trim(),
+        "phone_number": "+${selectedCountry?.phoneCode}${phoneCtrl.text.trim()}",
+      if (phoneCtrl.text.trim().isEmpty) "email": emailCtrl.text.trim(),
       "password": passwordCtrl.text.trim(),
     };
 
     try {
       final response = await http.post(url, body: requestBody);
-      print("🔗 API URL: $url");
-      print("📤 Request Body: $requestBody");
-      print("📥 Status Code: ${response.statusCode}");
-      print("📥 Raw Response: ${response.body}");
-
       final result = json.decode(response.body);
 
       if (result['status'] == 'success') {
         final user = result['user'] ?? result['data'];
+
         if (user['role_id'].toString() == "3") {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString("user_id", user['id'].toString());
-          if (user['token'] != null) {
-            await prefs.setString("token", user['token'].toString());
-          }
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("✅ Login successful!")),
-          );
+          await prefs.setString("admin", jsonEncode(user));
+          await prefs.setString("user_id", user['id'].toString());
+
           Navigator.pushReplacementNamed(context, Routes.dashboard);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -117,30 +112,72 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      print("⚠️ Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to connect: $e")),
+        SnackBar(content: Text("⚠️ Error: $e")),
       );
     } finally {
       setState(() => isLoading = false);
     }
   }
-  /// ✅ Forgot Password Handler
-void _handleForgotPassword() {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => const ForgotPasswordScreen(),
-    ),
-  );
-}
 
+  // ------------------ SOCIAL LOGIN BACKEND ------------------
+  Future<void> _handleSocialBackend(Map<String, dynamic> social) async {
+    setState(() => socialLoading = true);
+
+    final url = Uri.parse(
+      "https://churppy.eurekawebsolutions.com/api/social_login_admin.php",
+    );
+
+    final cleanBody = social.map((key, value) => MapEntry(key, value ?? ""));
+
+    try {
+      final response = await http.post(url, body: cleanBody);
+      final result = json.decode(response.body);
+
+      if (result['status'] == 'success') {
+        final user = result['data'];
+        final prefs = await SharedPreferences.getInstance();
+
+        await prefs.setString("admin", jsonEncode(user));
+        await prefs.setString("user_id", user['id'].toString());
+
+        // ------------------------------------
+        // ⭐ CHECK IF NEW USER CREATED
+        // ------------------------------------
+        final msg = result['message'].toString().toLowerCase();
+
+        if (msg.contains("created")) {
+          // NEW USER → plans screen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const ChurppyPlansScreen()),
+          );
+          return;
+        }
+
+        // EXISTING USER → dashboard
+        Navigator.pushReplacementNamed(context, Routes.dashboard);
+
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ ${result['message']}")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Login Failed: $e")),
+      );
+    } finally {
+      setState(() => socialLoading = false);
+    }
+  }
+
+  // ------------------ UI ------------------
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final screenW = media.size.width;
-    final isTablet = media.size.shortestSide >= 600;
-    final contentMaxW = screenW.clamp(320.0, isTablet ? 560.0 : 440.0);
+    final contentMaxW = screenW.clamp(320.0, 480.0);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -152,186 +189,168 @@ void _handleForgotPassword() {
               children: [
                 Column(
                   children: [
-                    const SizedBox(height: 30),
-
-                    /// 🔰 LOGO
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Center(
-                        child: Image.asset(
-                          'assets/images/logo.png',
-                          width: contentMaxW * 0.5,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 35),
+                    Image.asset("assets/images/logo.png", width: contentMaxW * 0.5),
+                    const SizedBox(height: 35),
 
                     Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: ConstrainedBox(
-                              constraints:
-                                  BoxConstraints(minHeight: constraints.maxHeight),
-                              child: IntrinsicHeight(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    const Text(
-                                      'Enter your mobile number',
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Enter your mobile number',
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+
+                            Row(
+                              children: [
+                                InkWell(
+                                  onTap: () => _showCountryPicker(context),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Color(0xFFBDBDBD)),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
-                                    const SizedBox(height: 8),
-                                    Row(
+                                    child: Row(
                                       children: [
-                                        // ✅ replaced with country_picker
-                                        InkWell(
-                                          onTap: () => _showCountryPicker(context),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 10, vertical: 12),
-                                            decoration: BoxDecoration(
-                                              border: Border.all(
-                                                  color: Color(0xFFBDBDBD)),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Text(selectedCountry?.flagEmoji ?? '🌎',
-                                                    style: const TextStyle(fontSize: 20)),
-                                                const SizedBox(width: 6),
-                                                Text('+${selectedCountry?.phoneCode ?? ''}',
-                                                    style: const TextStyle(fontSize: 14)),
-                                                const Icon(Icons.arrow_drop_down, size: 20),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: phoneCtrl,
-                                            keyboardType: TextInputType.phone,
-                                            decoration: InputDecoration(
-                                              hintText: 'Phone Number',
-                                              errorText: _errors['phone'],
-                                              border: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 14,
-                                                      vertical: 12),
-                                            ),
-                                          ),
-                                        ),
+                                        Text(selectedCountry?.flagEmoji ?? '🌎',
+                                            style: const TextStyle(fontSize: 20)),
+                                        const SizedBox(width: 6),
+                                        Text('+${selectedCountry?.phoneCode ?? ''}',
+                                            style: const TextStyle(fontSize: 14)),
+                                        const Icon(Icons.arrow_drop_down, size: 18),
                                       ],
                                     ),
-                                    const SizedBox(height: 16),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: phoneCtrl,
+                                    keyboardType: TextInputType.phone,
+                                    decoration: InputDecoration(
+                                      hintText: 'Phone Number',
+                                      errorText: _errors['phone'],
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
 
-                                    _field("Email", emailCtrl,
-                                        error: _errors['email']),
-                                    _field("Password", passwordCtrl,
-                                        obscure: true,
-                                        error: _errors['password']),
-                                    
- const SizedBox(height: 2),
+                            const SizedBox(height: 16),
+
+                            _field("Email", emailCtrl, error: _errors['email']),
+                            _field("Password", passwordCtrl,
+                                obscure: true, error: _errors['password']),
+
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
-                                onPressed: _handleForgotPassword,
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => const ForgotPasswordScreen()),
+                                  );
+                                },
                                 child: const Text(
                                   'Forgot Password?',
                                   style: TextStyle(
                                     color: Color(0xFF804692),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
                                     decoration: TextDecoration.underline,
                                   ),
                                 ),
                               ),
                             ),
-                                    SizedBox(
-                                      height: 48,
-                                      child: FilledButton(
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor:
-                                              const Color(0xFF804692),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8)),
-                                        ),
-                                        onPressed: isLoading ? null : _login,
-                                        child: isLoading
-                                            ? const SizedBox(
-                                                height: 22,
-                                                width: 22,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : const Text('Continue'),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 14),
 
-                                    Center(
-                                      child: GestureDetector(
-                                        onTap: () => Navigator.pushReplacementNamed(
-                                            context, Routes.signup),
-                                        child: const Text.rich(
-                                          TextSpan(
-                                            text: "Don't have an account? ",
-                                            style:
-                                                TextStyle(color: Colors.black87),
-                                            children: [
-                                              TextSpan(
-                                                text: 'Sign up.',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  decoration:
-                                                      TextDecoration.underline,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
+                            const SizedBox(height: 20),
 
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 12),
-                                      child: Text(
-                                        "Review terms and conditions. Changes, inappropriate language, and non-protocol use of our platform is prohibited. Violators will be banned and reported. Churppy is Trademark and Patent Pending.",
-                                        textAlign: TextAlign.center,
+                            // ---------------- GOOGLE LOGIN ----------------
+                            _socialButton(
+                              icon: "assets/images/google.png",
+                              text: "Continue with Google",
+                              onTap: () async {
+                                final data =
+                                    await SocialAuthService.loginWithGoogle();
+                                if (data != null) _handleSocialBackend(data);
+                              },
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // ---------------- APPLE LOGIN ----------------
+                            _socialButton(
+                              icon: "assets/images/apple.png",
+                              text: "Continue with Apple",
+                              onTap: () async {
+                                final data =
+                                    await SocialAuthService.loginWithApple();
+                                if (data != null) _handleSocialBackend(data);
+                              },
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ---------------- SUBMIT LOGIN BUTTON ----------------
+                            SizedBox(
+                              height: 48,
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF804692),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: isLoading ? null : _login,
+                                child: isLoading
+                                    ? const CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white)
+                                    : const Text('Continue'),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            Center(
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const SignupScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text.rich(
+                                  TextSpan(
+                                    text: "Don’t have an account? ",
+                                    style: TextStyle(color: Colors.black87),
+                                    children: [
+                                      TextSpan(
+                                        text: "Sign Up",
                                         style: TextStyle(
-                                          fontSize: 12,
-                                          height: 1.4,
-                                          color: Colors.black54,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: TextDecoration.underline,
+                                          color: Color(0xFF804692),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          );
-                        },
+
+                            const SizedBox(height: 40),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -344,6 +363,7 @@ void _handleForgotPassword() {
     );
   }
 
+  // ------------------ WIDGET HELPERS ------------------
   Widget _field(String hint, TextEditingController ctrl,
       {bool obscure = false, String? error}) {
     return Padding(
@@ -355,8 +375,31 @@ void _handleForgotPassword() {
           hintText: hint,
           errorText: error,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _socialButton({
+    required String icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFF804692), width: 1.4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        onPressed: socialLoading ? null : onTap,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(icon, height: 24),
+            const SizedBox(width: 10),
+            Text(text),
+          ],
         ),
       ),
     );
@@ -365,11 +408,9 @@ void _handleForgotPassword() {
   void _showCountryPicker(BuildContext context) {
     showCountryPicker(
       context: context,
-      showPhoneCode: true, // ✅ shows +code
+      showPhoneCode: true,
       onSelect: (Country country) {
-        setState(() {
-          selectedCountry = country;
-        });
+        setState(() => selectedCountry = country);
       },
     );
   }

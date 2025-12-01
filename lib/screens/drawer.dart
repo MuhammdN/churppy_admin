@@ -148,8 +148,8 @@ class _ChurppyDrawerState extends State<ChurppyDrawer> {
                                             fit: BoxFit.cover,
                                             errorBuilder: (c, o, s) {
                                               return Container(
-                                                width: screenW * 0.18,
-                                                height: screenW * 0.18,
+                                                width: screenW * 0.12,
+                                                height: screenW * 0.12,
                                                 decoration: BoxDecoration(
                                                   color: Colors.grey[300],
                                                   shape: BoxShape.circle,
