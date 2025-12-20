@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:churppy_admin/screens/slider1.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../routes.dart';
@@ -57,8 +58,12 @@ class SplashScreen extends StatelessWidget {
             Align(
               alignment: const Alignment(0.90, 0.30),
               child: GestureDetector(
-                onTap: () =>
-                    Navigator.pushReplacementNamed(context, Routes.login),
+              onTap: () => Navigator.push(
+  context,
+  MaterialPageRoute(builder: (context) => Slider1()),
+),
+
+
                 child: Image.asset(
                   'assets/images/go_button.png',
                   width: screenW * 0.36,
