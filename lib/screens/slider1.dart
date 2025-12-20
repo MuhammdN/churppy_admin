@@ -138,7 +138,7 @@ class Slider1 extends StatelessWidget {
                               ),
                               const SizedBox(height: 12),
                               _buildButton(
-                                text: "Foodtrucks | Mobile | Vendors (Business App)",
+                                text: "Foodtrucks | Mobile | Cutomer App",
                                 color: Colors.pink,
                                 onTap: () {},
                               ),

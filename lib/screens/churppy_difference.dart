@@ -115,7 +115,7 @@ class ChurppyDifference extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _button(
-                          "Foodtrucks | Mobile | Vendors\nEnter HERE",
+                          "Foodtrucks | Mobile | Customer App\nEnter HERE",
                           Colors.purple,
                           () {
                             debugPrint("Vendors pressed");
