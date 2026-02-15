@@ -4,6 +4,7 @@ import 'package:churppy_admin/screens/dashboard_screen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/reactivate_payment_screen.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
+import 'package:churppy_admin/screens/churppy_alert_plan.dart'; // ✅ ADD: Plans screen for gating
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,7 +33,6 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
   void initState() {
     super.initState();
     _getUserLocationAndCountry();
-    
   }
 
   Future<void> _getUserLocationAndCountry() async {
@@ -65,7 +65,8 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
 
     if (resp.statusCode == 200) {
       final data = json.decode(resp.body);
-      final countryCode = data['address']?['country_code']?.toString().toUpperCase();
+      final countryCode =
+          data['address']?['country_code']?.toString().toUpperCase();
       setState(() {
         _currentCountryCode = countryCode;
         widget.controller.text = data['display_name'] ?? "";
@@ -77,8 +78,7 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
   Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
     if (query.isEmpty || _currentCountryCode == null) return [];
 
-    final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/search'
+    final uri = Uri.parse('https://nominatim.openstreetmap.org/search'
         '?q=${Uri.encodeComponent(query)}'
         '&countrycodes=${_currentCountryCode!.toLowerCase()}'
         '&format=json&addressdetails=1&limit=6');
@@ -112,7 +112,8 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           ),
         );
       },
@@ -168,22 +169,22 @@ class _ReactivateAlertScreenState extends State<ReactivateAlertScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill with current alert data
-    _loadCurrentLocation(); // Load real address from coordinates
-    
-    // Set default dates (today and tomorrow)
+    _loadCurrentLocation();
+
     final now = DateTime.now();
     final tomorrow = now.add(const Duration(days: 1));
-    
-    _firstDayCtrl.text = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    _lastDayCtrl.text = "${tomorrow.year.toString().padLeft(4, '0')}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
-    
-    // Set default times (current time and +2 hours)
-    _timeStartCtrl.text = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
-    _timeEndCtrl.text = "${now.add(const Duration(hours: 2)).hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
+
+    _firstDayCtrl.text =
+        "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    _lastDayCtrl.text =
+        "${tomorrow.year.toString().padLeft(4, '0')}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
+
+    _timeStartCtrl.text =
+        "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
+    _timeEndCtrl.text =
+        "${now.add(const Duration(hours: 2)).hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
   }
 
-  /// 🔰 NEW: Load real address from coordinates
   Future<void> _loadCurrentLocation() async {
     final location = widget.alert['location']?.toString() ?? '';
     if (location.contains(',')) {
@@ -192,13 +193,12 @@ class _ReactivateAlertScreenState extends State<ReactivateAlertScreen> {
         if (parts.length == 2) {
           final lat = parts[0].trim();
           final lon = parts[1].trim();
-          
+
           final url = Uri.parse(
-            'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
-          );
+              'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1');
 
           final response = await http.get(url, headers: {
-            'User-Agent': 'ChurppyApp/1.0'
+            'User-Agent': 'ChurppyApp/1.0',
           });
 
           if (response.statusCode == 200) {
@@ -255,73 +255,69 @@ class _ReactivateAlertScreenState extends State<ReactivateAlertScreen> {
   }
 
   String? _validateDateTime() {
-  if (_firstDayCtrl.text.isEmpty ||
-      _lastDayCtrl.text.isEmpty ||
-      _timeStartCtrl.text.isEmpty ||
-      _timeEndCtrl.text.isEmpty) {
-    return null;
-  }
-
-  try {
-    final startDateTime =
-        DateTime.parse("${_firstDayCtrl.text} ${_timeStartCtrl.text}");
-    final endDateTime =
-        DateTime.parse("${_lastDayCtrl.text} ${_timeEndCtrl.text}");
-
-    final totalDuration = endDateTime.difference(startDateTime);
-
-    // 🟢 Minimum 10 minutes
-    if (totalDuration.inMinutes < 10) {
-      return "⚠️ Minimum alert duration should be 10 minutes";
+    if (_firstDayCtrl.text.isEmpty ||
+        _lastDayCtrl.text.isEmpty ||
+        _timeStartCtrl.text.isEmpty ||
+        _timeEndCtrl.text.isEmpty) {
+      return null;
     }
 
-    // 🔴 Maximum 72 hours
-    if (totalDuration.inHours > 72) {
-      return "⚠️ Maximum alert duration should be 72 hours (3 days)";
+    try {
+      final startDateTime =
+          DateTime.parse("${_firstDayCtrl.text} ${_timeStartCtrl.text}");
+      final endDateTime =
+          DateTime.parse("${_lastDayCtrl.text} ${_timeEndCtrl.text}");
+
+      final totalDuration = endDateTime.difference(startDateTime);
+
+      if (totalDuration.inMinutes < 10) {
+        return "⚠️ Minimum alert duration should be 10 minutes";
+      }
+
+      if (totalDuration.inHours > 72) {
+        return "⚠️ Maximum alert duration should be 72 hours (3 days)";
+      }
+
+      return null;
+    } catch (e) {
+      return "⚠️ Invalid date/time format";
+    }
+  }
+
+  void _handleReactivate() {
+    if (_addressCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Please enter a location")),
+      );
+      return;
     }
 
-    return null;
-  } catch (e) {
-    return "⚠️ Invalid date/time format";
-  }
-}
+    final dateTimeError = _validateDateTime();
+    if (dateTimeError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(dateTimeError)),
+      );
+      return;
+    }
 
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-void _handleReactivate() {
-  // 🔰 Location check
-  if (_addressCtrl.text.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("⚠️ Please enter a location")),
+    widget.onReactivate(
+      _addressCtrl.text,
+      _firstDayCtrl.text,
+      _lastDayCtrl.text,
+      "${_timeStartCtrl.text} to ${_timeEndCtrl.text}",
     );
-    return;
-  }
 
-  // 🔰 Duration validation
-  final dateTimeError = _validateDateTime();
-  if (dateTimeError != null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(dateTimeError)),
-    );
-    return; // STOP HERE
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    });
   }
-
-  // Continue to payment page
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-  });
-
-  widget.onReactivate(
-    _addressCtrl.text,
-    _firstDayCtrl.text,
-    _lastDayCtrl.text,
-    "${_timeStartCtrl.text} to ${_timeEndCtrl.text}",
-  );
- Future.delayed(Duration(milliseconds: 100), () {
-  if (mounted) {
-    setState(() => _isLoading = false);
-  }
-});}
 
   @override
   Widget build(BuildContext context) {
@@ -346,48 +342,48 @@ void _handleReactivate() {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              Row(
-                        children: [
-                          Image.asset("assets/images/bell_churppy.png", height: 70),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Reactivate Alert",
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.purple.shade800,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  "Update Alert Details",
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  "Current Plan: Single Use",
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+            Row(
+              children: [
+                Image.asset("assets/images/bell_churppy.png", height: 70),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Reactivate Alert",
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.purple.shade800,
+                        ),
                       ),
-                      const SizedBox(height: 20),
-            // Location Section with Autocomplete
+                      const SizedBox(height: 4),
+                      Text(
+                        "Update Alert Details",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Current Plan: Single Use",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
             Text(
               "UPDATE LOCATION",
               style: GoogleFonts.roboto(
@@ -396,13 +392,10 @@ void _handleReactivate() {
                 color: Colors.black87,
               ),
             ),
-           
             const SizedBox(height: 12),
             AddressAutocompleteField(controller: _addressCtrl),
-
             const SizedBox(height: 20),
 
-            // Dates Section
             Row(
               children: [
                 Text(
@@ -427,7 +420,8 @@ void _handleReactivate() {
                     decoration: const InputDecoration(
                       hintText: "START DATE",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     ),
                   ),
                 ),
@@ -440,7 +434,8 @@ void _handleReactivate() {
                     decoration: const InputDecoration(
                       hintText: "END DATE",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     ),
                   ),
                 ),
@@ -449,7 +444,6 @@ void _handleReactivate() {
 
             const SizedBox(height: 20),
 
-            // Times Section
             Row(
               children: [
                 Text(
@@ -474,7 +468,8 @@ void _handleReactivate() {
                     decoration: const InputDecoration(
                       hintText: "START TIME",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     ),
                   ),
                 ),
@@ -487,14 +482,14 @@ void _handleReactivate() {
                     decoration: const InputDecoration(
                       hintText: "END TIME",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     ),
                   ),
                 ),
               ],
             ),
 
-            // Validation Error
             if (_errorMessage != null) ...[
               const SizedBox(height: 16),
               Container(
@@ -506,7 +501,8 @@ void _handleReactivate() {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                    Icon(Icons.error_outline,
+                        color: Colors.red.shade600, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -524,7 +520,6 @@ void _handleReactivate() {
 
             const SizedBox(height: 30),
 
-            // Reactivate Button
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -543,7 +538,8 @@ void _handleReactivate() {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : Text(
@@ -559,7 +555,6 @@ void _handleReactivate() {
 
             const SizedBox(height: 16),
 
-            // Cancel Button
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -574,7 +569,7 @@ void _handleReactivate() {
                 child: Text(
                   "CANCEL",
                   style: GoogleFonts.roboto(
-                    color: Colors.grey.shade700,
+                    color: Colors.grey,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -605,17 +600,16 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   Map<String, bool> _reactivatingAlerts = {};
   Map<String, bool> _favoritingAlerts = {};
 
-  // ✅ Filter states
   String _currentFilter = 'all';
 
-  // ✅ Profile data
   String? profileImage;
   String? firstName;
   String? lastName;
   bool _profileLoading = true;
 
-  // ✅ Favorite alerts storage key
   static const String _favoriteAlertsKey = 'favorite_alerts';
+
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -624,7 +618,58 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     _fetchUserAlerts();
   }
 
-  /// ✅ Load profile data
+  /// ✅ SAME LOGIC AS DASHBOARD SEND ALERT BUTTON (APPLIED EVERYWHERE)
+  Future<bool> _checkPlanAndAllowAlert() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final isTrial = prefs.getBool("is_trial") ?? false;
+    final freeLeft = prefs.getInt("trial_free_left") ?? (isTrial ? 2 : 0);
+
+    // If you use this flag anywhere else, keep it.
+    final hasActivePlan = prefs.getBool("has_active_plan") ?? false;
+
+    debugPrint(
+        "🔍 PlanCheck → isTrial=$isTrial freeLeft=$freeLeft hasActivePlan=$hasActivePlan");
+
+    if (isTrial && freeLeft <= 0) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ChurppyPlansScreen(showTryFree: false),
+        ),
+      );
+      return false;
+    }
+
+    if (!isTrial && !hasActivePlan) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ChurppyPlansScreen(showTryFree: true),
+        ),
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _playDing() async {
+    try {
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayer.setVolume(1.0);
+
+      debugPrint("🔔 Trying to play: assets/sounds/1.wav");
+      await _audioPlayer.play(
+        AssetSource('sounds/1.wav'),
+      );
+
+      debugPrint("✅ Sound PLAYED");
+    } catch (e) {
+      debugPrint("❌ SOUND ERROR: $e");
+    }
+  }
+
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUserId = prefs.getString("user_id");
@@ -634,10 +679,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
   }
 
-  /// ✅ Fetch User Profile
   Future<void> _fetchUserProfile(String uid) async {
-    final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+    final url =
+        Uri.parse("https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
 
     try {
       final res = await http.get(url);
@@ -658,7 +702,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
   }
 
-  /// ✅ Fetch User Alerts from API
   Future<void> _fetchUserAlerts() async {
     try {
       final url = Uri.parse(
@@ -669,10 +712,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['status'] == 'success') {
-          // ✅ Load favorites from SharedPreferences and merge with API data
           final List<dynamic> alerts = data['alerts'] ?? [];
           await _loadFavoritesToAlerts(alerts);
-          
+
           setState(() {
             _allAlerts = alerts;
             _applyFilter(_currentFilter);
@@ -699,122 +741,106 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
   }
 
-  /// ✅ Load favorites from SharedPreferences and merge with alerts
   Future<void> _loadFavoritesToAlerts(List<dynamic> alerts) async {
     final prefs = await SharedPreferences.getInstance();
     final favoriteAlertsJson = prefs.getString(_favoriteAlertsKey);
-    
+
     if (favoriteAlertsJson != null) {
       try {
-        final Map<String, dynamic> favoriteAlerts = Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
-        
+        final Map<String, dynamic> favoriteAlerts =
+            Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
+
         for (var alert in alerts) {
           final alertId = alert['id']?.toString();
           if (alertId != null && favoriteAlerts.containsKey(alertId)) {
             alert['is_favorite'] = favoriteAlerts[alertId] == true ? '1' : '0';
           } else {
-            alert['is_favorite'] = '0'; // Default to not favorite
+            alert['is_favorite'] = '0';
           }
         }
       } catch (e) {
-        print('Error loading favorites: $e');
-        // If there's an error, set all alerts to not favorite
         for (var alert in alerts) {
           alert['is_favorite'] = '0';
         }
       }
     } else {
-      // If no favorites saved, set all alerts to not favorite
       for (var alert in alerts) {
         alert['is_favorite'] = '0';
       }
     }
   }
-final AudioPlayer _audioPlayer = AudioPlayer();
 
-Future<void> _playDing() async {
-  try {
-    await _audioPlayer.setReleaseMode(ReleaseMode.stop); // mandatory for iOS
-    await _audioPlayer.setVolume(1.0);
-
-    debugPrint("🔔 Trying to play: assets/sounds/1.wav");
-    await _audioPlayer.play(
-      AssetSource('sounds/1.wav'),
-    );
-
-    debugPrint("✅ Sound PLAYED");
-  } catch (e) {
-    debugPrint("❌ SOUND ERROR: $e");
-  }
-}
-  /// ✅ Save favorite status to SharedPreferences
   Future<void> _saveFavoriteToPrefs(String alertId, bool isFavorite) async {
     final prefs = await SharedPreferences.getInstance();
     final favoriteAlertsJson = prefs.getString(_favoriteAlertsKey);
-    
+
     Map<String, dynamic> favoriteAlerts = {};
-    
+
     if (favoriteAlertsJson != null) {
       try {
-        favoriteAlerts = Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
+        favoriteAlerts =
+            Map<String, dynamic>.from(json.decode(favoriteAlertsJson));
       } catch (e) {
-        print('Error parsing favorites: $e');
         favoriteAlerts = {};
       }
     }
-    
+
     if (isFavorite) {
       favoriteAlerts[alertId] = true;
     } else {
       favoriteAlerts.remove(alertId);
     }
-    
+
     await prefs.setString(_favoriteAlertsKey, json.encode(favoriteAlerts));
   }
 
-  /// 🔄 UPDATED: Apply filter to alerts - AUTO DETECT EXPIRED FROM DATES
   void _applyFilter(String filter) {
     setState(() {
       _currentFilter = filter;
-      
-      // ✅ Auto-detect expired alerts based on dates/times
-      final now = DateTime.now();
+
       List<dynamic> updatedAlerts = List.from(_allAlerts);
-      
+
       for (var alert in updatedAlerts) {
         final currentStatus = alert['status']?.toString() ?? '0';
         final startDate = alert['start_date']?.toString() ?? '';
         final expiryDate = alert['expiry_date']?.toString() ?? '';
         final startTime = alert['start_time']?.toString() ?? '';
         final endTime = alert['end_time']?.toString() ?? '';
-        
-        // ✅ Agar alert active hai (status 1) aur time khatam ho gaya hai, toh expired mark karein
-        if (currentStatus == '1' && _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
-          alert['status'] = '2'; // Expired status set karein
-          alert['time_left'] = 'Expired'; // Time left update karein
+
+        if (currentStatus == '1' &&
+            _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
+          alert['status'] = '2';
+          alert['time_left'] = 'Expired';
         }
-        
-        // ✅ Agar alert pending hai (status 0) aur time khatam ho gaya hai, toh expired mark karein
-        if (currentStatus == '0' && _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
-          alert['status'] = '2'; // Expired status set karein
-          alert['time_left'] = 'Expired'; // Time left update karein
+
+        if (currentStatus == '0' &&
+            _isAlertExpired(startDate, expiryDate, startTime, endTime)) {
+          alert['status'] = '2';
+          alert['time_left'] = 'Expired';
         }
       }
-      
+
       _allAlerts = updatedAlerts;
-      
+
       switch (filter) {
         case 'active':
-          _filteredAlerts = _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '1').toList();
+          _filteredAlerts = _allAlerts
+              .where((a) => (a['status']?.toString() ?? '0') == '1')
+              .toList();
           break;
         case 'pending':
-          _filteredAlerts = _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '0').toList();
+          _filteredAlerts = _allAlerts
+              .where((a) => (a['status']?.toString() ?? '0') == '0')
+              .toList();
           break;
         case 'expired':
-          _filteredAlerts = _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '2').toList();
+          _filteredAlerts = _allAlerts
+              .where((a) => (a['status']?.toString() ?? '0') == '2')
+              .toList();
           break;
         case 'favorites':
-          _filteredAlerts = _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).toList();
+          _filteredAlerts =
+              _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).toList();
           break;
         default:
           _filteredAlerts = List.from(_allAlerts);
@@ -822,58 +848,53 @@ Future<void> _playDing() async {
     });
   }
 
-  /// 🔄 NEW: Check if alert is expired based on dates and times
-  bool _isAlertExpired(String startDate, String expiryDate, String startTime, String endTime) {
-  try {
-    // Clean formats:
-    // time format should always be HH:mm:ss
-    String cleanedStartTime = startTime.length == 5 ? "$startTime:00" : startTime;
-    String cleanedEndTime   = endTime.length == 5 ? "$endTime:00" : endTime;
+  bool _isAlertExpired(
+      String startDate, String expiryDate, String startTime, String endTime) {
+    try {
+      String cleanedStartTime = startTime.length == 5 ? "$startTime:00" : startTime;
+      String cleanedEndTime = endTime.length == 5 ? "$endTime:00" : endTime;
 
-    // Build valid datetime:
-    final startDateTime = DateTime.parse("$startDate".split(' ')[0] + " " + cleanedStartTime);
-    final endDateTime   = DateTime.parse("$expiryDate".split(' ')[0] + " " + cleanedEndTime);
+      final endDateTime =
+          DateTime.parse("${expiryDate.split(' ')[0]} $cleanedEndTime");
 
-    final now = DateTime.now();
-
-    return now.isAfter(endDateTime);
-  } catch (e) {
-    print("🔥 Corrected DateTime Error: $e");
-    return false;
+      final now = DateTime.now();
+      return now.isAfter(endDateTime);
+    } catch (e) {
+      return false;
+    }
   }
-}
 
-
-  /// ✅ Toggle Favorite Status (Local Only - SharedPreferences)
   Future<void> _toggleFavorite(String alertId, bool isCurrentlyFavorite) async {
     setState(() {
       _favoritingAlerts[alertId] = true;
     });
 
     try {
-      // ✅ Save to SharedPreferences
       await _saveFavoriteToPrefs(alertId, !isCurrentlyFavorite);
-      
-      // ✅ Update local state
+
       setState(() {
-        final alertIndex = _allAlerts.indexWhere((a) => a['id']?.toString() == alertId);
+        final alertIndex =
+            _allAlerts.indexWhere((a) => a['id']?.toString() == alertId);
         if (alertIndex != -1) {
-          _allAlerts[alertIndex]['is_favorite'] = isCurrentlyFavorite ? '0' : '1';
-          _applyFilter(_currentFilter); // Re-apply current filter
+          _allAlerts[alertIndex]['is_favorite'] =
+              isCurrentlyFavorite ? '0' : '1';
+          _applyFilter(_currentFilter);
         }
       });
-      
-      // Show success message
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isCurrentlyFavorite ? "❌ Removed from favorites" : "✅ Added to favorites"),
-          backgroundColor: isCurrentlyFavorite ? Colors.orange : const Color(0xFF8DC63F),
+          content: Text(isCurrentlyFavorite
+              ? "❌ Removed from favorites"
+              : "✅ Added to favorites"),
+          backgroundColor:
+              isCurrentlyFavorite ? Colors.orange : const Color(0xFF8DC63F),
           behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text("❌ Failed to update favorite"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
@@ -886,38 +907,33 @@ Future<void> _playDing() async {
     }
   }
 
-  /// ✅ Activate Alert API Call
   Future<void> _activateAlert(String alertId) async {
     setState(() {
       _activatingAlerts[alertId] = true;
     });
 
     try {
-      final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/activate_alert.php");
-      
-      final response = await http.post(
-        url,
-        body: {
-          'alert_id': alertId,
-        },
-      );
+      final url = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/activate_alert.php");
+
+      final response = await http.post(url, body: {
+        'alert_id': alertId,
+      });
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        
+
         if (data['status'] == 'success') {
-            _playDing();
-  debugPrint("🔔 SOUND PLAY TRIGGERED");
-          // Show success message
+          await _playDing();
+
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Text("✅ Alert activated successfully!"),
-              backgroundColor: const Color(0xFF8DC63F),
+              backgroundColor: Color(0xFF8DC63F),
               behavior: SnackBarBehavior.floating,
             ),
           );
-          
-          // Refresh the alerts list
+
           await _fetchUserAlerts();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -933,7 +949,7 @@ Future<void> _playDing() async {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text("❌ Failed to activate alert"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
@@ -946,16 +962,13 @@ Future<void> _playDing() async {
     }
   }
 
-  /// 🔰 UPDATED: Reactivate Expired Alert with Payment Integration
   Future<void> _reactivateAlert(Map<String, dynamic> alert) async {
-    // Show reactivation screen first
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ReactivateAlertScreen(
           alert: alert,
           onReactivate: (newLocation, startDate, endDate, timeRange) async {
-            // After reactivation details are entered, proceed to payment
             await _processReactivationWithPayment(
               alert,
               newLocation,
@@ -969,7 +982,6 @@ Future<void> _playDing() async {
     );
   }
 
-  /// 🔰 NEW: Process Reactivation with Payment Integration
   Future<void> _processReactivationWithPayment(
     Map<String, dynamic> alert,
     String newLocation,
@@ -977,12 +989,10 @@ Future<void> _playDing() async {
     String endDate,
     String timeRange,
   ) async {
-    // Split time range back to separate times
     final times = timeRange.split(' to ');
     final startTime = times.isNotEmpty ? times[0] : '00:00:00';
     final endTime = times.length > 1 ? times[1] : '23:59:59';
 
-    // Prepare alert data for payment
     final alertData = {
       'id': alert['id']?.toString() ?? '',
       'merchant_id': widget.userId,
@@ -996,100 +1006,87 @@ Future<void> _playDing() async {
       'description': alert['description']?.toString() ?? '',
     };
 
-    // Navigate to payment screen
     await Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => AlertPaymentScreen(
-      alertData: alertData,        // REQUIRED ✔
-      onPaymentSuccess: () async {  // REQUIRED ✔
-        await _fetchUserAlerts();
-         _playDing();
-  debugPrint("🔔 SOUND PLAY TRIGGERED");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("✅ Alert reactivated successfully!"),
-            backgroundColor: Color(0xFF8DC63F),
-          ),
-        );
-      },
-    ),
-  ),
-  
-);
-
+      context,
+      MaterialPageRoute(
+        builder: (context) => AlertPaymentScreen(
+          alertData: alertData,
+          onPaymentSuccess: () async {
+            await _fetchUserAlerts();
+            await _playDing();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("✅ Alert reactivated successfully!"),
+                backgroundColor: Color(0xFF8DC63F),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
-  /// 🔰 UPDATED: Convert Coordinates to Complete Real Address Name
   Future<String> _getLocationName(String coordinates) async {
     if (coordinates.isEmpty) {
       return 'Location not set';
     }
 
-    // If coordinates contain comma, it's lat,lon - convert to address
     if (coordinates.contains(',')) {
       try {
         final parts = coordinates.split(',');
         if (parts.length == 2) {
           final lat = parts[0].trim();
           final lon = parts[1].trim();
-          
+
           final url = Uri.parse(
-            'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
-          );
+              'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1');
 
           final response = await http.get(url, headers: {
-            'User-Agent': 'ChurppyApp/1.0'
+            'User-Agent': 'ChurppyApp/1.0',
           });
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
             final displayName = data['display_name']?.toString();
-            
             if (displayName != null && displayName.isNotEmpty) {
               return displayName;
             }
           }
         }
-      } catch (e) {
-        print('Location conversion error: $e');
-      }
+      } catch (e) {}
     }
-    
-    // If it's already an address or conversion failed, return as is
     return coordinates;
   }
 
-  /// ✅ Get Time Left from Backend (No calculation needed now)
   String _getTimeLeftDisplay(Map<String, dynamic> alert) {
     final timeLeft = alert['time_left']?.toString() ?? '';
-    final status = alert['status']?.toString() ?? '0';
-    
-    if (timeLeft.isEmpty) {
-      return 'Not set';
-    }
-    
-    // ✅ Backend se jo time_left aa raha hai, wohi display karein
+    if (timeLeft.isEmpty) return 'Not set';
     return timeLeft;
   }
 
-  /// ✅ Status color mapping
   Color _getStatusColor(String status) {
     switch (status) {
-      case '1': return const Color(0xFF8DC63F); // Active - Green
-      case '0': return Colors.orange; // Pending - Orange
-      case '2': return Colors.red; // Expired - Red
-      default: return Colors.grey;
+      case '1':
+        return const Color(0xFF8DC63F);
+      case '0':
+        return Colors.orange;
+      case '2':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 
-  /// ✅ Status text mapping
   String _getStatusText(String status) {
     switch (status) {
-      case '1': return 'ACTIVE';
-      case '0': return 'PENDING';
-      case '2': return 'EXPIRED';
-      default: return 'UNKNOWN';
+      case '1':
+        return 'ACTIVE';
+      case '0':
+        return 'PENDING';
+      case '2':
+        return 'EXPIRED';
+      default:
+        return 'UNKNOWN';
     }
   }
 
@@ -1109,9 +1106,9 @@ Future<void> _playDing() async {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                /// 🔰 UPDATED: Top Header with Logo
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1137,7 +1134,8 @@ Future<void> _playDing() async {
                               onTap: () {
                                 Navigator.push(
                                   context,
-                                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                                  MaterialPageRoute(
+                                      builder: (_) => const ProfileScreen()),
                                 );
                               },
                               child: profileImage != null
@@ -1149,22 +1147,18 @@ Future<void> _playDing() async {
                                         height: 50,
                                         fit: BoxFit.cover,
                                         errorBuilder: (c, o, s) {
-                                          return const Icon(Icons.person, size: 70, color: Colors.grey);
+                                          return const Icon(Icons.person,
+                                              size: 70, color: Colors.grey);
                                         },
                                       ),
                                     )
-                                  : const Icon(Icons.person, size: 70, color: Colors.grey),
+                                  : const Icon(Icons.person,
+                                      size: 70, color: Colors.grey),
                             ),
                     ],
                   ),
                 ),
 
-                /// 🔰 Page Title
-               
-                 
-              
-
-                /// 🔰 Back Button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
@@ -1173,16 +1167,16 @@ Future<void> _playDing() async {
                         radius: 20,
                         backgroundColor: Colors.grey.shade300,
                         child: IconButton(
-                          icon: const Icon(Icons.arrow_back, size: 20, color: Colors.black),
+                          icon: const Icon(Icons.arrow_back,
+                              size: 20, color: Colors.black),
                           onPressed: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => DashboardScreen(), 
-    ),
-  );
-},
-
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const DashboardScreen(),
+                              ),
+                            );
+                          },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
@@ -1190,10 +1184,10 @@ Future<void> _playDing() async {
                       const SizedBox(width: 10),
                       Text(
                         'My Alerts',
-                   style: GoogleFonts.poppins(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      fontStyle: FontStyle.italic,
+                        style: GoogleFonts.poppins(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          fontStyle: FontStyle.italic,
                         ),
                       ),
                     ],
@@ -1202,7 +1196,6 @@ Future<void> _playDing() async {
 
                 const SizedBox(height: 20),
 
-                /// 🔰 Stats Summary - TAPPABLE FILTERS (INCLUDING FAVORITES)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
@@ -1234,11 +1227,44 @@ Future<void> _playDing() async {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _filterItem('Total', _allAlerts.length.toString(), 'all', Icons.list_alt),
-                            _filterItem('Active', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '1').length.toString(), 'active', Icons.check_circle),
-                            _filterItem('Pending', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '0').length.toString(), 'pending', Icons.schedule),
-                            _filterItem('Expired', _allAlerts.where((a) => (a['status']?.toString() ?? '0') == '2').length.toString(), 'expired', Icons.cancel),
-                            _filterItem('Favorites', _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).length.toString(), 'favorites', Icons.favorite),
+                            _filterItem('Total', _allAlerts.length.toString(),
+                                'all', Icons.list_alt),
+                            _filterItem(
+                                'Active',
+                                _allAlerts
+                                    .where((a) =>
+                                        (a['status']?.toString() ?? '0') == '1')
+                                    .length
+                                    .toString(),
+                                'active',
+                                Icons.check_circle),
+                            _filterItem(
+                                'Pending',
+                                _allAlerts
+                                    .where((a) =>
+                                        (a['status']?.toString() ?? '0') == '0')
+                                    .length
+                                    .toString(),
+                                'pending',
+                                Icons.schedule),
+                            _filterItem(
+                                'Expired',
+                                _allAlerts
+                                    .where((a) =>
+                                        (a['status']?.toString() ?? '0') == '2')
+                                    .length
+                                    .toString(),
+                                'expired',
+                                Icons.cancel),
+                            _filterItem(
+                                'Favorites',
+                                _allAlerts
+                                    .where((a) =>
+                                        (a['is_favorite']?.toString() == '1'))
+                                    .length
+                                    .toString(),
+                                'favorites',
+                                Icons.favorite),
                           ],
                         ),
                       ],
@@ -1248,30 +1274,37 @@ Future<void> _playDing() async {
 
                 const SizedBox(height: 16),
 
-                /// 🔰 Current Filter Indicator
                 if (_currentFilter != 'all')
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: _getFilterColor(_currentFilter).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: _getFilterColor(_currentFilter).withOpacity(0.3)),
+                        border: Border.all(
+                            color: _getFilterColor(_currentFilter)
+                                .withOpacity(0.3)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_getFilterIcon(_currentFilter), size: 16, color: _getFilterColor(_currentFilter)),
+                          Icon(_getFilterIcon(_currentFilter),
+                              size: 16, color: _getFilterColor(_currentFilter)),
                           const SizedBox(width: 6),
                           Text(
                             "Showing ${_currentFilter.toUpperCase()} alerts (${_filteredAlerts.length})",
-                            style: GoogleFonts.roboto(fontSize: 12, fontWeight: FontWeight.w600, color: _getFilterColor(_currentFilter)),
+                            style: GoogleFonts.roboto(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _getFilterColor(_currentFilter)),
                           ),
                           const Spacer(),
                           GestureDetector(
                             onTap: () => _applyFilter('all'),
-                            child: Icon(Icons.close, size: 16, color: _getFilterColor(_currentFilter)),
+                            child: Icon(Icons.close,
+                                size: 16, color: _getFilterColor(_currentFilter)),
                           ),
                         ],
                       ),
@@ -1280,7 +1313,6 @@ Future<void> _playDing() async {
 
                 const SizedBox(height: 16),
 
-                /// 🔰 Alerts List
                 Expanded(
                   child: _isLoading
                       ? _buildLoadingState()
@@ -1300,11 +1332,10 @@ Future<void> _playDing() async {
     );
   }
 
-  /// 🔰 Filter Item Widget
   Widget _filterItem(String title, String count, String filter, IconData icon) {
     final isSelected = _currentFilter == filter;
     final color = _getFilterColor(filter);
-    
+
     return GestureDetector(
       onTap: () => _applyFilter(filter),
       child: Container(
@@ -1312,62 +1343,82 @@ Future<void> _playDing() async {
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isSelected ? color : Colors.transparent, width: isSelected ? 1.5 : 0),
+          border: Border.all(
+              color: isSelected ? color : Colors.transparent,
+              width: isSelected ? 1.5 : 0),
         ),
         child: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.1), shape: BoxShape.circle),
               child: Icon(icon, size: 16, color: color),
             ),
             const SizedBox(height: 4),
-            Text(count, style: GoogleFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+            Text(count,
+                style: GoogleFonts.roboto(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: color)),
             const SizedBox(height: 2),
-            Text(title, style: GoogleFonts.roboto(fontSize: 10, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, color: isSelected ? color : Colors.black54)),
+            Text(title,
+                style: GoogleFonts.roboto(
+                    fontSize: 10,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected ? color : Colors.black54)),
           ],
         ),
       ),
     );
   }
 
-  /// 🔰 Get filter color
   Color _getFilterColor(String filter) {
     switch (filter) {
-      case 'active': return const Color(0xFF8DC63F);
-      case 'pending': return Colors.orange;
-      case 'expired': return Colors.red;
-      case 'favorites': return Colors.pink;
-      default: return Color(0xFF804692);
+      case 'active':
+        return const Color(0xFF8DC63F);
+      case 'pending':
+        return Colors.orange;
+      case 'expired':
+        return Colors.red;
+      case 'favorites':
+        return Colors.pink;
+      default:
+        return const Color(0xFF804692);
     }
   }
 
-  /// 🔰 Get filter icon
   IconData _getFilterIcon(String filter) {
     switch (filter) {
-      case 'active': return Icons.check_circle;
-      case 'pending': return Icons.schedule;
-      case 'expired': return Icons.cancel;
-      case 'favorites': return Icons.favorite;
-      default: return Icons.list_alt;
+      case 'active':
+        return Icons.check_circle;
+      case 'pending':
+        return Icons.schedule;
+      case 'expired':
+        return Icons.cancel;
+      case 'favorites':
+        return Icons.favorite;
+      default:
+        return Icons.list_alt;
     }
   }
 
-  /// 🔰 Loading State
   Widget _buildLoadingState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8DC63F))),
+          const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8DC63F))),
           const SizedBox(height: 16),
-          Text("Loading your alerts...", style: GoogleFonts.roboto(fontSize: 16, color: Colors.black54)),
+          Text("Loading your alerts...",
+              style: GoogleFonts.roboto(fontSize: 16, color: Colors.black54)),
         ],
       ),
     );
   }
 
-  /// 🔰 Error State
   Widget _buildErrorState() {
     return Center(
       child: Column(
@@ -1375,21 +1426,34 @@ Future<void> _playDing() async {
         children: [
           Icon(Icons.error_outline, size: 60, color: Colors.red.shade300),
           const SizedBox(height: 16),
-          Text("Failed to load alerts", style: GoogleFonts.roboto(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)),
+          Text("Failed to load alerts",
+              style: GoogleFonts.roboto(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54)),
           const SizedBox(height: 8),
-          Text("Please check your connection and try again", style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
+          Text("Please check your connection and try again",
+              style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey),
+              textAlign: TextAlign.center),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _fetchUserAlerts,
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8DC63F), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            child: const Text("Try Again", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF8DC63F),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text("Try Again",
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
 
-  /// 🔰 Empty State
+  /// ✅ UPDATED: Empty State Create Alert → now gated same as dashboard
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -1397,26 +1461,48 @@ Future<void> _playDing() async {
         children: [
           Image.asset('assets/images/bell_churppy.png', height: 100, width: 100),
           const SizedBox(height: 24),
-          Text(_currentFilter == 'all' ? "No Alerts Found" : "No ${_currentFilter.toUpperCase()} Alerts", style: GoogleFonts.roboto(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black54)),
+          Text(
+            _currentFilter == 'all'
+                ? "No Alerts Found"
+                : "No ${_currentFilter.toUpperCase()} Alerts",
+            style: GoogleFonts.roboto(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54),
+          ),
           const SizedBox(height: 12),
-          Text(_currentFilter == 'all' ? "You haven't created any alerts yet" : "You don't have any ${_currentFilter} alerts", style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
+          Text(
+            _currentFilter == 'all'
+                ? "You haven't created any alerts yet"
+                : "You don't have any ${_currentFilter} alerts",
+            style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
+              final allowed = await _checkPlanAndAllowAlert();
+              if (!allowed) return;
+
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => SelectAlertScreen()),
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8DC63F), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            child: const Text("Create Alert", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF8DC63F),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text("Create Alert",
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
 
-  /// 🔰 Alerts List
   Widget _buildAlertsList() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1431,7 +1517,6 @@ Future<void> _playDing() async {
     );
   }
 
-  /// 🔰 PROFESSIONAL ALERT CARD WITH FAVORITE & REACTIVATE FUNCTIONALITY
   Widget _alertCard(Map<String, dynamic> alert) {
     final status = alert['status']?.toString() ?? '0';
     final title = alert['title']?.toString() ?? 'No Title';
@@ -1439,13 +1524,11 @@ Future<void> _playDing() async {
     final location = alert['location']?.toString() ?? '';
     final alertId = alert['id']?.toString() ?? 'N/A';
     final isFavorite = alert['is_favorite']?.toString() == '1';
-    
-    // ✅ Backend se time_left directly use karein
+
     final timeLeft = _getTimeLeftDisplay(alert);
 
     final statusColor = _getStatusColor(status);
     final isPending = status == '0';
-    final isActive = status == '1';
     final isExpired = status == '2';
 
     return FutureBuilder<String>(
@@ -1458,10 +1541,7 @@ Future<void> _playDing() async {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.shade200, 
-              width: 1.5
-            ),
+            border: Border.all(color: Colors.grey.shade200, width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.08),
@@ -1473,7 +1553,6 @@ Future<void> _playDing() async {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              /// 🔰 Status Header with Favorite Button
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
@@ -1491,7 +1570,6 @@ Future<void> _playDing() async {
                 ),
                 child: Row(
                   children: [
-                    /// 🔰 Status Badge
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
@@ -1526,10 +1604,7 @@ Future<void> _playDing() async {
                         ],
                       ),
                     ),
-                    
                     const Spacer(),
-                    
-                    /// 🔰 Favorite Button
                     if (_favoritingAlerts[alertId] == true)
                       const SizedBox(
                         width: 20,
@@ -1546,7 +1621,9 @@ Future<void> _playDing() async {
                           duration: const Duration(milliseconds: 300),
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: isFavorite ? Colors.pink.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                            color: isFavorite
+                                ? Colors.pink.withOpacity(0.1)
+                                : Colors.grey.withOpacity(0.1),
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: isFavorite ? Colors.pink : Colors.grey,
@@ -1560,10 +1637,7 @@ Future<void> _playDing() async {
                           ),
                         ),
                       ),
-                    
                     const SizedBox(width: 12),
-                    
-                    /// 🔰 Alert ID
                     Text(
                       "#$alertId",
                       style: GoogleFonts.roboto(
@@ -1575,74 +1649,66 @@ Future<void> _playDing() async {
                   ],
                 ),
               ),
-              
-              /// 🔰 Card Content with Ample Padding
+
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    /// 🔰 Title and Description with Clear Separation
-                    Column(
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: statusColor.withOpacity(0.2),
-                                  width: 1,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: statusColor.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.campaign_rounded,
+                            size: 18,
+                            color: statusColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: GoogleFonts.roboto(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                  height: 1.3,
                                 ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              child: Icon(
-                                Icons.campaign_rounded,
-                                size: 18,
-                                color: statusColor,
+                              const SizedBox(height: 6),
+                              Text(
+                                description,
+                                style: GoogleFonts.roboto(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade700,
+                                  height: 1.4,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    title,
-                                    style: GoogleFonts.roboto(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black87,
-                                      height: 1.3,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    description,
-                                    style: GoogleFonts.roboto(
-                                      fontSize: 13,
-                                      color: Colors.grey.shade700,
-                                      height: 1.4,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    
+
                     const SizedBox(height: 16),
-                    
-                    /// 🔰 Divider for Clear Separation
+
                     Container(
                       height: 1,
                       decoration: BoxDecoration(
@@ -1655,53 +1721,55 @@ Future<void> _playDing() async {
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 16),
-                    
-                    /// 🔰 Location and Time Details in Organized Layout
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ✅ Location - REAL ADDRESS
-                        _detailRow(
-                          Icons.location_on_outlined,
-                          "Location",
-                          displayLocation,
-                          Colors.blue.shade600,
-                        ),
-                        
-                        const SizedBox(height: 12),
-                        
-                        // ✅ Time Left (backend se directly)
-                        if (timeLeft.isNotEmpty && timeLeft != 'Not set' && !isPending)
-                          _detailRow(
-                            Icons.access_time_filled,
-                            isExpired ? "Expired" : "Time Left",
-                            timeLeft,
-                            isExpired ? Colors.red : const Color(0xFF8DC63F),
-                          ),
-                      ],
+
+                    _detailRow(
+                      Icons.location_on_outlined,
+                      "Location",
+                      displayLocation,
+                      Colors.blue.shade600,
                     ),
-                    
-                    /// 🔰 Action Buttons based on Alert Status
+
+                    const SizedBox(height: 12),
+
+                    if (timeLeft.isNotEmpty &&
+                        timeLeft != 'Not set' &&
+                        !isPending)
+                      _detailRow(
+                        Icons.access_time_filled,
+                        isExpired ? "Expired" : "Time Left",
+                        timeLeft,
+                        isExpired ? Colors.red : const Color(0xFF8DC63F),
+                      ),
+
                     if (isPending || isExpired) ...[
                       const SizedBox(height: 20),
+
                       if (isPending)
                         _buildActionButton(
                           "ACTIVATE ALERT",
                           Icons.play_arrow_rounded,
                           const Color(0xFF8DC63F),
                           _activatingAlerts[alertId] == true,
-                          () => _activateAlert(alertId),
+                          () async {
+                            final allowed = await _checkPlanAndAllowAlert();
+                            if (!allowed) return;
+                            _activateAlert(alertId);
+                          },
                         ),
-                      
+
                       if (isExpired)
                         _buildActionButton(
                           "REACTIVATE ALERT",
                           Icons.refresh_rounded,
-                          Color(0xFF8DC63F),
+                          const Color(0xFF8DC63F),
                           _reactivatingAlerts[alertId] == true,
-                          () => _reactivateAlert(alert),
+                          () async {
+                            final allowed = await _checkPlanAndAllowAlert();
+                            if (!allowed) return;
+                            _reactivateAlert(alert);
+                          },
                         ),
                     ],
                   ],
@@ -1714,17 +1782,14 @@ Future<void> _playDing() async {
     );
   }
 
-  /// 🔰 Action Button Widget
-  Widget _buildActionButton(String text, IconData icon, Color color, bool isLoading, VoidCallback onTap) {
+  Widget _buildActionButton(String text, IconData icon, Color color, bool isLoading,
+      VoidCallback onTap) {
     return Container(
       width: double.infinity,
       height: 44,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            color,
-            color.withOpacity(0.9),
-          ],
+          colors: [color, color.withOpacity(0.9)],
         ),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
@@ -1776,27 +1841,21 @@ Future<void> _playDing() async {
     );
   }
 
-  /// 🔰 Professional Detail Row Widget
   Widget _detailRow(IconData icon, String label, String value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: color.withOpacity(0.05),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: color.withOpacity(0.15),
-          width: 1,
-        ),
+        border: Border.all(color: color.withOpacity(0.15), width: 1),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
+            decoration:
+                BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
             child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: 12),

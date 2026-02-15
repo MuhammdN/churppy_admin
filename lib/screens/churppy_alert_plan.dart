@@ -46,7 +46,12 @@ class PackageModel {
 }
 
 class ChurppyPlansScreen extends StatefulWidget {
-  const ChurppyPlansScreen({super.key});
+  final bool showTryFree; // ✅ NEW FLAG
+
+  const ChurppyPlansScreen({
+    super.key,
+    this.showTryFree = true,
+  });
 
   @override
   State<ChurppyPlansScreen> createState() => _ChurppyPlansScreenState();
@@ -74,20 +79,16 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   }
 
   Future<void> _loadMerchantId() async {
-  final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    final mId = prefs.getString("user_id");
 
-  // Ab OPTION 2 ke mutabiq user_id hi save hota hai  
-  final mId = prefs.getString("user_id");
-
-  if (mId != null) {
-    setState(() {
-      merchantId = mId;
-    });
-
-    debugPrint("✅ Loaded user_id (merchantId): $merchantId");
+    if (mId != null) {
+      setState(() {
+        merchantId = mId;
+      });
+      debugPrint("✅ Loaded user_id (merchantId): $merchantId");
+    }
   }
-}
-
 
   Future<void> fetchPackages() async {
     try {
@@ -105,16 +106,75 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
                 .toList();
             isLoading = false;
           });
+          return;
         }
       }
+
+      setState(() => isLoading = false);
     } catch (e) {
       debugPrint("Error fetching packages: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  // ✅ Save plan state to prefs so Dashboard gating works instantly
+  Future<void> _savePlanStateToPrefs({
+    required bool activePlan,
+    required String planType,
+    required int packageId,
+    required String planCycle, // monthly / annual
+    required int amountUsd,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      await prefs.setBool("has_active_plan", activePlan);
+      await prefs.setString("plan_type", planType); // ground/aspire/supreme/trial
+
+      await prefs.setInt("active_package_id", packageId);
+      await prefs.setString("active_plan_cycle", planCycle); // monthly/annual
+      await prefs.setInt("active_plan_amount", amountUsd); // in USD
+
+      // ✅ turn off trial if paid
+      if (activePlan) {
+        await prefs.setBool("is_trial", false);
+        await prefs.setInt("trial_free_left", 0);
+      }
+
+      debugPrint(
+          "✅ Prefs saved: has_active_plan=$activePlan | plan_type=$planType | pkg=$packageId | cycle=$planCycle | amount=$amountUsd");
+    } catch (e) {
+      debugPrint("❌ Pref save failed: $e");
+    }
+  }
+
+  /// ✅ TRY FOR FREE (NO DISTURB TO PAID FLOW)
+  Future<void> _tryForFree() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      await prefs.setBool("is_trial", true);
+      await prefs.setString("plan_type", "trial");
+
+      // optional defaults
+      if (!prefs.containsKey("trial_free_left")) {
+        await prefs.setInt("trial_free_left", 2);
+      }
+      await prefs.setBool("has_active_plan", false);
+
+      // ✅ Don't touch user_id
+      Navigator.pushReplacementNamed(context, "/dashboard");
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("⚠️ Try for free failed: $e")),
+      );
     }
   }
 
   /// 🔹 Stripe amount (monthly/annual in cents) — annual 10% discount applied
   int _getStripeAmount() {
-    if (selectedPackageId == null) return 0;
+    if (selectedPackageId == null || packages.isEmpty) return 0;
+
     final selectedPackage = packages.firstWhere(
       (pkg) => pkg.packageId == selectedPackageId,
       orElse: () => packages[0],
@@ -134,7 +194,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
     }
 
     if (_selectedPlanType == 'annual') {
-      final annual = monthly * 12 * 0.9; // ✅ 10% OFF
+      final annual = monthly * 12 * 0.9; // 10% OFF
       return (annual.round()) * 100;
     } else {
       return monthly * 100;
@@ -143,7 +203,8 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
 
   /// 🔹 DB amount (monthly/annual in USD) — annual 10% discount applied
   int _getDbAmount() {
-    if (selectedPackageId == null) return 0;
+    if (selectedPackageId == null || packages.isEmpty) return 0;
+
     final selectedPackage = packages.firstWhere(
       (pkg) => pkg.packageId == selectedPackageId,
       orElse: () => packages[0],
@@ -169,9 +230,19 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
     }
   }
 
+  String _getSelectedPlanNameLower() {
+    if (selectedPackageId == null || packages.isEmpty) return "";
+    final selectedPackage = packages.firstWhere(
+      (pkg) => pkg.packageId == selectedPackageId,
+      orElse: () => packages[0],
+    );
+    return selectedPackage.packageName.toLowerCase().trim();
+  }
+
   Future<String?> _createPaymentIntent(int amount) async {
     try {
-      final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/create_payment_intent.php");
+      final url = Uri.parse(
+          "https://churppy.eurekawebsolutions.com/api/create_payment_intent.php");
       final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
@@ -225,9 +296,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-              },
+              onPressed: () => Navigator.pop(ctx),
               child: const Text("CANCEL"),
             ),
             ElevatedButton(
@@ -249,9 +318,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
   Future<void> savePlan() async {
     if (merchantId == null || selectedPackageId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Merchant ID or package not selected"),
-        ),
+        const SnackBar(content: Text("Merchant ID or package not selected")),
       );
       return;
     }
@@ -261,9 +328,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
 
     if (stripeAmount <= 0 || dbAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Invalid package or amount"),
-        ),
+        const SnackBar(content: Text("Invalid package or amount")),
       );
       return;
     }
@@ -271,17 +336,17 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
     setState(() => isSaving = true);
 
     try {
+      // 1) create intent
       final clientSecret = await _createPaymentIntent(stripeAmount);
       if (clientSecret == null) {
         setState(() => isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Failed to create payment intent"),
-          ),
+          const SnackBar(content: Text("Failed to create payment intent")),
         );
         return;
       }
 
+      // 2) show stripe sheet
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
@@ -290,6 +355,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
       );
       await Stripe.instance.presentPaymentSheet();
 
+      // 3) save to DB (NOTE: your endpoint name says fetch_packages.php; ideally use save_plan.php)
       final response = await http.post(
         Uri.parse("https://churppy.eurekawebsolutions.com/api/fetch_packages.php"),
         headers: {"Content-Type": "application/json"},
@@ -297,7 +363,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           "merchant_id": merchantId,
           "package_id": selectedPackageId,
           "amount": dbAmount,
-          "plan_type": _selectedPlanType, // ✅ New field
+          "plan_type": _selectedPlanType, // monthly/annual
         }),
       );
 
@@ -305,6 +371,16 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
       debugPrint("📥 Save Plan Response: $data");
 
       if (data["status"] == "success") {
+        // ✅ SAVE PREFS FOR DASHBOARD
+        final planName = _getSelectedPlanNameLower();
+        await _savePlanStateToPrefs(
+          activePlan: true,
+          planType: planName.isNotEmpty ? planName : "paid",
+          packageId: selectedPackageId!,
+          planCycle: _selectedPlanType,
+          amountUsd: dbAmount,
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(data["message"] ?? "Plan saved"),
@@ -343,7 +419,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
         );
       }
     } finally {
-      setState(() => isSaving = false);
+      if (mounted) setState(() => isSaving = false);
     }
   }
 
@@ -373,8 +449,8 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
                               child: Text(
                                 'SELECT YOUR PLAN',
                                 style: GoogleFonts.lemon(
-                                  fontWeight: FontWeight.w700, 
-                                  fontSize: 18
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 18,
                                 ),
                               ),
                             ),
@@ -383,58 +459,89 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
                               child: _plansTable(),
                             ),
                             const SizedBox(height: 20),
-                           Padding(
-  padding: const EdgeInsets.only(top:20),
-  child: Align(
-    alignment: Alignment.centerLeft, // Align to left side
-    child: Container(
-      height: 100,
-      width: 250, // Fixed width as shown in screenshot
-      decoration: BoxDecoration(
-        color: const Color(0xFF8DC63F),
-       borderRadius: const BorderRadius.only(
-      topRight: Radius.circular(15),
-      bottomRight: Radius.circular(15),
-    ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: () {
-            if (selectedPackageId == null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Please select a plan"),
-                ),
-              );
-              return;
-            }
-            _selectPlanTypeDialog();
-          },
-          child: Center(
-            child: Text(
-              "GO GET CHURPPY",
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 24, // Slightly smaller font size
-                letterSpacing: 0.1,
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  ),
-),
+
+                            // ✅ GO GET CHURPPY (PAID FLOW - SAME)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 20),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  height: 100,
+                                  width: 250,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF8DC63F),
+                                    borderRadius: const BorderRadius.only(
+                                      topRight: Radius.circular(15),
+                                      bottomRight: Radius.circular(15),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(30),
+                                      onTap: () {
+                                        if (selectedPackageId == null) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text("Please select a plan")),
+                                          );
+                                          return;
+                                        }
+                                        _selectPlanTypeDialog();
+                                      },
+                                      child: Center(
+                                        child: Text(
+                                          "GO GET CHURPPY",
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 24,
+                                            letterSpacing: 0.1,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 35),
+
+                            // ✅ TRY FOR FREE (ONLY WHEN showTryFree == true)
+                            if (widget.showTryFree)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 30),
+                                child: SizedBox(
+                                  height: 48,
+                                  child: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(color: Color(0xFF804692), width: 1.6),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onPressed: isSaving ? null : _tryForFree,
+                                    child: Text(
+                                      "TRY FOR FREE",
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF804692),
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            const SizedBox(height: 30),
                           ],
                         ),
                       ),
@@ -463,16 +570,11 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
             onTap: () {},
             child: Image.asset('assets/icons/menu.png', width: 40),
           ),
-
           Expanded(
             child: Center(
-              child: Image.asset(
-                'assets/images/logo.png',
-                width: 100,
-              ),
+              child: Image.asset('assets/images/logo.png', width: 100),
             ),
           ),
-
           const SizedBox(width: 40),
         ],
       ),
@@ -500,18 +602,20 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           textAlign: TextAlign.center,
         );
 
-    Widget _cell(String t,
-        {FontWeight w = FontWeight.w600,
-        TextAlign ta = TextAlign.center,
-        Color? c}) {
+    Widget _cell(
+      String t, {
+      FontWeight w = FontWeight.w600,
+      TextAlign ta = TextAlign.center,
+      Color? c,
+    }) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         child: Text(
           t,
           style: GoogleFonts.poppins(
-            fontSize: 12.5, 
-            fontWeight: w, 
-            color: c ?? Colors.black
+            fontSize: 12.5,
+            fontWeight: w,
+            color: c ?? Colors.black,
           ),
           textAlign: ta,
         ),
@@ -532,7 +636,7 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           _cell(''),
           _th(essentials.packageName),
           _th(business.packageName, color: purple),
-          _th(enterprise.packageName, color: const Color(0xFF8DC63F)), // ✅ Removed grey background
+          _th(enterprise.packageName, color: const Color(0xFF8DC63F)),
         ]),
         TableRow(children: [
           _cell('Churppy Alerts', w: FontWeight.w700, c: purple),
@@ -565,7 +669,8 @@ class _ChurppyPlansScreenState extends State<ChurppyPlansScreen> {
           _cell(enterprise.monthly, w: FontWeight.w900),
         ]),
         TableRow(children: [
-          _cell('Annual Save 10%', w: FontWeight.w800, c: const Color(0xFF8DC63F)),
+          _cell('Annual Save 10%',
+              w: FontWeight.w800, c: const Color(0xFF8DC63F)),
           _cell(essentials.annualSave),
           _cell(business.annualSave),
           _cell(enterprise.annualSave),

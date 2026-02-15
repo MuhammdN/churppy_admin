@@ -3,6 +3,7 @@ import 'package:churppy_admin/screens/AlertsListScreen.dart';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
+import 'package:churppy_admin/screens/churppy_alert_plan.dart'; // ✅ plans screen
 import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -30,7 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool isLoading = true;
 
-  // ✅ New filter dropdown value
+  // ✅ Filter dropdown
   String selectedFilter = "all";
   final List<Map<String, String>> filterOptions = [
     {"label": "All Time", "value": "all"},
@@ -39,21 +40,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
     {"label": "Yearly", "value": "year"},
   ];
 
+  // ✅ Trial / Free counter (comes from SharedPreferences)
+  bool isTrial = false;
+  int freeLeft = 0;
+
+  // ✅ NEW: paid plan state (comes from SharedPreferences)
+  bool hasActivePlan = false;
+  int activePackageId = 0;
+  String activePlanCycle = ""; // monthly/annual (optional)
+  String planType = ""; // ground/aspire/supreme/trial (optional)
+
   @override
   void initState() {
     super.initState();
-    _loadUserId();
+    _loadUserAndPlanState();
   }
 
-  /// ✅ Load user_id then fetch profile + stats
-  Future<void> _loadUserId() async {
+  /// ✅ Load user_id + plan flags + trial flags then fetch profile + stats
+  Future<void> _loadUserAndPlanState() async {
     final prefs = await SharedPreferences.getInstance();
+
     final savedUserId = prefs.getString("user_id");
 
+    // ✅ Paid plan prefs (set from Plans screen)
+    final paidFlag = prefs.getBool("has_active_plan") ?? false;
+    final pkgId = prefs.getInt("active_package_id") ?? 0;
+    final cycle = prefs.getString("active_plan_cycle") ?? "";
+    final pType = prefs.getString("plan_type") ?? "";
+
+    // ✅ Trial prefs
+    final trialFlag = prefs.getBool("is_trial") ?? false;
+
+    // ✅ default 2 free alerts (only for trial users)
+    int left = prefs.getInt("trial_free_left") ?? (trialFlag ? 2 : 0);
+
+    // ✅ if trial and first time, persist default
+    if (trialFlag && !prefs.containsKey("trial_free_left")) {
+      await prefs.setInt("trial_free_left", 2);
+      left = 2;
+    }
+
     debugPrint("✅ Logged-in User ID: $savedUserId");
+    debugPrint("✅ PaidPlan=$paidFlag | pkgId=$pkgId | cycle=$cycle | planType=$pType");
+    debugPrint("✅ Trial=$trialFlag | FreeLeft=$left");
 
     setState(() {
       userId = savedUserId;
+
+      hasActivePlan = paidFlag;
+      activePackageId = pkgId;
+      activePlanCycle = cycle;
+      planType = pType;
+
+      // trial flags
+      isTrial = trialFlag;
+      freeLeft = left;
     });
 
     if (savedUserId != null) {
@@ -64,8 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// ✅ Fetch User Profile
   Future<void> _fetchUserProfile(String uid) async {
-    final url =
-        Uri.parse("https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
+    final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/user.php?id=$uid");
 
     try {
       final res = await http.get(url);
@@ -92,8 +132,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// ✅ Dashboard API call (now with filter)
   Future<void> _fetchDashboardData(String uid, String filter) async {
     setState(() => isLoading = true);
-    final url =
-        Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
+
+    final url = Uri.parse("https://churppy.eurekawebsolutions.com/api/admin_dashboard.php");
 
     try {
       final response = await http.post(url, body: {
@@ -122,6 +162,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             SnackBar(content: Text("❌ ${result['message']}")),
           );
         }
+      } else {
+        setState(() => isLoading = false);
       }
     } catch (e) {
       debugPrint("⚠️ Error: $e");
@@ -144,10 +186,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  /// ✅ SEND ALERT BUTTON LOGIC
+  /// Priority:
+  /// 1) Paid plan => ALWAYS allow SelectAlertScreen
+  /// 2) Trial => if freeLeft<=0 => Plans screen (TryFree hidden)
+  /// 3) Otherwise => Plans screen (normal) OR allow? (we keep allow to SelectAlert like old, but safer: send to plans)
+  Future<void> _handleSendAlertTap() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // latest reads
+    final paidFlag = prefs.getBool("has_active_plan") ?? false;
+    final pkgId = prefs.getInt("active_package_id") ?? 0;
+
+    final trialFlag = prefs.getBool("is_trial") ?? false;
+    final left = prefs.getInt("trial_free_left") ?? (trialFlag ? 2 : 0);
+
+    setState(() {
+      hasActivePlan = paidFlag;
+      activePackageId = pkgId;
+
+      isTrial = trialFlag;
+      freeLeft = left;
+    });
+
+    // ✅ 1) PAID USER => direct next screen
+    if (paidFlag == true && pkgId > 0) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SelectAlertScreen()),
+      );
+      return;
+    }
+
+    // ✅ 2) TRIAL USER => gate by freeLeft
+    if (trialFlag) {
+      if (left <= 0) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ChurppyPlansScreen(showTryFree: false),
+          ),
+        );
+        return;
+      }
+
+      // still has free alerts => allow
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SelectAlertScreen()),
+      );
+      return;
+    }
+
+    // ✅ 3) NO PLAN + NOT TRIAL => send to plans
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ChurppyPlansScreen(showTryFree: true),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final maxCardW = w.clamp(320.0, 480.0);
+
+    final badgeText = isTrial ? "$freeLeft left" : "";
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -163,8 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   /// 🔰 Top Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -194,8 +298,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ProfileScreen()),
+                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
                             );
                           },
                           child: profileImage != null
@@ -207,13 +310,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     height: 50,
                                     fit: BoxFit.cover,
                                     errorBuilder: (c, o, s) {
-                                      return const Icon(Icons.person,
-                                          size: 45, color: Colors.grey);
+                                      return const Icon(Icons.person, size: 45, color: Colors.grey);
                                     },
                                   ),
                                 )
-                              : const Icon(Icons.person,
-                                  size: 70, color: Colors.grey),
+                              : const Icon(Icons.person, size: 70, color: Colors.grey),
                         ),
                       ],
                     ),
@@ -243,8 +344,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           items: filterOptions.map((opt) {
                             return DropdownMenuItem<String>(
                               value: opt["value"],
-                              child: Text(opt["label"]!,
-                                  style: GoogleFonts.roboto(fontSize: 14)),
+                              child: Text(opt["label"]!, style: GoogleFonts.roboto(fontSize: 14)),
                             );
                           }).toList(),
                           onChanged: (val) {
@@ -259,17 +359,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  /// 🔰 SEND ALERT BANNER
+                  /// 🔰 SEND ALERT BANNER (WITH COUNTER + GATING)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 30),
                     child: GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>  SelectAlertScreen()),
-                        );
-                      },
+                      onTap: _handleSendAlertTap,
                       child: Row(
                         children: [
                           Image.asset(
@@ -279,80 +373,97 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Container(
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF8DC63F),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'SEND CHURPPY ALERT',
-                                  style: GoogleFonts.roboto(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF8DC63F),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'SEND CHURPPY ALERT',
+                                      style: GoogleFonts.roboto(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+
+                                /// ✅ Trial badge (only when trial)
+                                if (isTrial)
+                                  Positioned(
+                                    right: 5,
+                                    top: 5,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        badgeText,
+                                        style: GoogleFonts.roboto(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF804692),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  SizedBox(height: 25),
-                 Padding(
-  padding: const EdgeInsets.symmetric(horizontal: 20),
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        "3 Simple Steps",
-        style: GoogleFonts.roboto(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
-        ),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        "1. Select Alert",
-        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        "2. Enter Location, Day(s) and Hours of Operation",
-        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        "3. Review",
-        style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
-      ),
-     
 
-     
-    ],
-  ),
-),
+                  const SizedBox(height: 25),
 
-                
-SizedBox(height: 25),
-                  
-    Center(
-  child: SizedBox(
-    width: 350, 
-    child: DottedLine(
-      dashColor: Color(0xFF804692),
-      lineThickness: 2,
-      dashLength: 20,
-      dashGapLength: 4,
-    ),
-  ),
-),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "3 Simple Steps",
+                          style: GoogleFonts.roboto(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text("1. Select Alert", style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87)),
+                        const SizedBox(height: 4),
+                        Text("2. Enter Location, Day(s) and Hours of Operation",
+                            style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87)),
+                        const SizedBox(height: 4),
+                        Text("3. Review", style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87)),
+                      ],
+                    ),
+                  ),
 
-    SizedBox(height: 25),
+                  const SizedBox(height: 25),
+
+                  Center(
+                    child: SizedBox(
+                      width: 350,
+                      child: DottedLine(
+                        dashColor: const Color(0xFF804692),
+                        lineThickness: 2,
+                        dashLength: 20,
+                        dashGapLength: 4,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 25),
+
                   /// 🔰 Stats Section
                   isLoading
                       ? const Center(child: CircularProgressIndicator())
@@ -374,7 +485,7 @@ SizedBox(height: 25),
                                 icon: Icons.person_outline,
                                 title: 'Total Customers',
                                 count: totalCustomers.toString(),
-                                color: Color(0xFF804692),
+                                color: const Color(0xFF804692),
                               ),
                               const SizedBox(height: 10),
                               _statBox(
@@ -386,21 +497,22 @@ SizedBox(height: 25),
                             ],
                           ),
                         ),
-SizedBox(height: 25),
-                  
-    Center(
-  child: SizedBox(
-    width: 350, 
-    child: DottedLine(
-      dashColor: Color(0xFF804692),
-      lineThickness: 2,
-      dashLength: 20,
-      dashGapLength: 4,
-    ),
-  ),
-),
 
-    SizedBox(height: 25),
+                  const SizedBox(height: 25),
+
+                  Center(
+                    child: SizedBox(
+                      width: 350,
+                      child: DottedLine(
+                        dashColor: const Color(0xFF804692),
+                        lineThickness: 2,
+                        dashLength: 20,
+                        dashGapLength: 4,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 25),
 
                   /// 🔰 Footer
                   Center(
@@ -410,7 +522,7 @@ SizedBox(height: 25),
                           "LET US CUSTOMIZE ALERTS FOR YOU!",
                           style: GoogleFonts.roboto(
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF804692),
+                            color: const Color(0xFF804692),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -423,8 +535,7 @@ SizedBox(height: 25),
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ContactUsScreen()),
+                              MaterialPageRoute(builder: (_) => const ContactUsScreen()),
                             );
                           },
                           child: Text(
@@ -435,9 +546,7 @@ SizedBox(height: 25),
                             ),
                           ),
                         ),
-                        SizedBox(height: 20),
-
-    
+                        const SizedBox(height: 20),
                       ],
                     ),
                   ),

@@ -1,4 +1,4 @@
-package com.example.churppy_admin
+package com.admin.churppyAdmin
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

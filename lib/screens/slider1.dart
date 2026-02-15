@@ -244,7 +244,7 @@ class _AutoContentAndInfoSliderState
       onTapUp: (_) => setState(() => _paused = false),
       onTapCancel: () => setState(() => _paused = false),
       child: SizedBox(
-        height: fs(300),
+        height: fs(315),
         child: PageView(
           controller: _controller,
           physics: const NeverScrollableScrollPhysics(),

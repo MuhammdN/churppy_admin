@@ -306,10 +306,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_stripe
-      sha256: "8ec182c1f14d34dd68d499c8d015d89773aa3d8d149a24c838ff6e5d51e2dd82"
+      sha256: "4f92660607b91310ec345948355c68843971d3f70673b529076707259b442513"
       url: "https://pub.dev"
     source: hosted
-    version: "9.4.0"
+    version: "9.6.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
