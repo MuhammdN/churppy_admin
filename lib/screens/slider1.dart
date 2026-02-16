@@ -87,27 +87,8 @@ class Slider1 extends StatelessWidget {
                               SizedBox(height: fs(5)),
 
                               /// 🔥 CONTENT + IMAGE + INFO AUTO SLIDER
+                              /// ✅ indicators bhi is ke sath move hongi
                               _AutoContentAndInfoSlider(fs: fs),
-
-                              SizedBox(height: fs(3)),
-
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  3,
-                                  (_) => Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: fs(15)),
-                                    child: Container(
-                                      width: fs(60),
-                                      height: fs(2),
-                                      decoration: BoxDecoration(
-                                        color: orange,
-                                        borderRadius: BorderRadius.circular(5),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
 
                               SizedBox(height: fs(30)),
 
@@ -167,6 +148,37 @@ class Slider1 extends StatelessWidget {
               },
             ),
 
+            /// ✅ SKIP BUTTON (TOP RIGHT) - Admin side
+            Positioned(
+              top: 12,
+              right: 16,
+              child: InkWell(
+                onTap: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                },
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.purple,
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                  ),
+                  child: Text(
+                    "Skip",
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
             /// 🔙 BACK ARROW (BOTTOM LEFT)
             Positioned(
               bottom: 20,
@@ -198,17 +210,16 @@ class Slider1 extends StatelessWidget {
 /// 🔥 AUTO CONTENT + IMAGE + INFO SLIDER
 /// ✔ PRESS & HOLD = PAUSE
 /// ✔ RELEASE = RESUME
+/// ✅ Indicators (lines) bhi slider ke sath move hongi
 class _AutoContentAndInfoSlider extends StatefulWidget {
   final double Function(double) fs;
   const _AutoContentAndInfoSlider({required this.fs});
 
   @override
-  State<_AutoContentAndInfoSlider> createState() =>
-      _AutoContentAndInfoSliderState();
+  State<_AutoContentAndInfoSlider> createState() => _AutoContentAndInfoSliderState();
 }
 
-class _AutoContentAndInfoSliderState
-    extends State<_AutoContentAndInfoSlider> {
+class _AutoContentAndInfoSliderState extends State<_AutoContentAndInfoSlider> {
   final PageController _controller = PageController();
   Timer? _timer;
   int _index = 0;
@@ -217,9 +228,14 @@ class _AutoContentAndInfoSliderState
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 8), (_) {
+
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (_paused) return;
-      _index = (_index + 1) % 3;
+
+      final next = (_index + 1) % 3;
+      _index = next;
+
+      if (mounted) setState(() {});
       _controller.animateToPage(
         _index,
         duration: const Duration(milliseconds: 350),
@@ -235,6 +251,11 @@ class _AutoContentAndInfoSliderState
     super.dispose();
   }
 
+  void _setIndex(int i) {
+    _index = i;
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final fs = widget.fs;
@@ -243,51 +264,81 @@ class _AutoContentAndInfoSliderState
       onTapDown: (_) => setState(() => _paused = true),
       onTapUp: (_) => setState(() => _paused = false),
       onTapCancel: () => setState(() => _paused = false),
-      child: SizedBox(
-        height: fs(315),
-        child: PageView(
-          controller: _controller,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            _slide(
-              fs,
-              title: 'Find great food + services faster',
-              bullets: [
-                'Locate your favorite Foodtruck, mobile service or business',
-                'Map Locator',
-                'Instantly know When and Where they are',
+      child: Column(
+        children: [
+          SizedBox(
+            height: fs(315),
+            child: PageView(
+              controller: _controller,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: (i) => _setIndex(i),
+              children: [
+                _slide(
+                  fs,
+                  title: 'Find great food + services faster',
+                  bullets: [
+                    'Locate your favorite Foodtruck, mobile service or business',
+                    'Map Locator',
+                    'Instantly know When and Where they are',
+                  ],
+                  info:
+                      "Tee’s Tasty Kitchen will be located at 33 Churppy Rd, Churppy, 33333 on October 9th from 11am to 6pm. Look Forward to Seeing You! ",
+                  time: "1hr 22mins left",
+                ),
+                _slide(
+                  fs,
+                  title: 'Know When+ Where',
+                  bullets: [
+                    'Receive Instant Churppy Alerts',
+                    'Get Real-time Offers',
+                    'Find Last Minute Deals',
+                  ],
+                  info:
+                      "We Cooked Too Much!\nStop By Tee’s Tasty Kitchen, 101\nChurppy Corner,33333 by 9pm tonight and receive 25% OFF!!  ",
+                  time: "1hr 22mins left",
+                ),
+                _slide(
+                  fs,
+                  title: 'Churppy Chain',
+                  bullets: [
+                    'Allows vendors to Bundle Individual Orders together When they are In Your Area',
+                    'Stops back and forth to same office, dorm, etc.',
+                    'Saves Gas + Time',
+                    'Creates a Buzz',
+                  ],
+                  info:
+                      "Someone in your area just ordered from Tee’s Tasty Kitchen, 101 Churppy College Court. Help Us Bundle Orders By Placing Your Own Order NOW! ",
+                  time: "Only 8 minutes left",
+                ),
               ],
-              info:
-                  "Tee’s Tasty Kitchen will be located at 33 Churppy Rd, Churppy, 33333 on October 9th from 11am to 6pm. Look Forward to Seeing You! ",
-              time: "1hr 22mins left",
             ),
-            _slide(
-              fs,
-              title: 'Know When+ Where',
-              bullets: [
-                'Receive Instant Churppy Alerts',
-                'Get Real-time Offers',
-                'Find Last Minute Deals',
-              ],
-              info:
-                  "We Cooked Too Much!\nStop By Tee’s Tasty Kitchen, 101\nChurppy Corner,33333 by 9pm tonight and receive 25% OFF!!  ",
-              time: "1hr 22mins left",
+          ),
+
+          SizedBox(height: fs(10)),
+
+          /// ✅ MOVING INDICATOR LINES
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              3,
+              (i) {
+                final active = i == _index;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: EdgeInsets.symmetric(horizontal: fs(15)),
+                  width: fs(active ? 75 : 60),
+                  height: fs(active ? 3 : 2),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? const Color(0xFFFF9633)
+                        : const Color(0xFFFF9633).withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                );
+              },
             ),
-            _slide(
-              fs,
-              title: 'Churppy Chain',
-              bullets: [
-                'Allows vendors to Bundle Individual Orders together When they are In Your Area',
-                'Stops back and forth to same office, dorm, etc.',
-                'Saves Gas + Time',
-                'Creates a Buzz',
-              ],
-              info:
-                  "Someone in your area just ordered from Tee’s Tasty Kitchen, 101 Churppy College Court. Help Us Bundle Orders By Placing Your Own Order NOW! ",
-              time: "Only 8 minutes left",
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
