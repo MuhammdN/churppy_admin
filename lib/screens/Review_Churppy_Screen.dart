@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:churppy_admin/screens/churppy_alert_plan.dart';
 import 'package:churppy_admin/screens/contactUsScreen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:flutter/material.dart';
@@ -205,88 +206,111 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
 
   /// 🔰 Reverse geocoding
   Future<void> _getLocationNameFromCoordinates() async {
-    debugPrint("📍 Raw location data: ${widget.alert.location}");
+  debugPrint("📍 Raw location data: ${widget.alert.location}");
 
-    if (!widget.alert.location.contains(",")) {
-      setState(() {
-        _locationName = widget.alert.location;
-        _isFetchingLocation = false;
-      });
-      return;
-    }
+  final rawLocation = widget.alert.location.trim();
 
-    try {
-      final parts = widget.alert.location.split(",");
-      if (parts.length == 2) {
-        final lat = parts[0].trim();
-        final lon = parts[1].trim();
-
-        final url = Uri.parse(
-          'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
-        );
-
-        final response = await http.get(url, headers: {'User-Agent': 'ChurppyApp/1.0'});
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-
-          final address = data['address'];
-          final displayName = data['display_name'];
-
-          if (address != null) {
-            String locationName = "Selected Location";
-
-            if (address['road'] != null && address['road'].toString().isNotEmpty) {
-              locationName = address['road'].toString();
-            } else if (address['neighbourhood'] != null && address['neighbourhood'].toString().isNotEmpty) {
-              locationName = address['neighbourhood'].toString();
-            } else if (address['suburb'] != null && address['suburb'].toString().isNotEmpty) {
-              locationName = address['suburb'].toString();
-            } else if (address['city'] != null && address['city'].toString().isNotEmpty) {
-              locationName = address['city'].toString();
-            } else if (address['town'] != null && address['town'].toString().isNotEmpty) {
-              locationName = address['town'].toString();
-            } else if (address['village'] != null && address['village'].toString().isNotEmpty) {
-              locationName = address['village'].toString();
-            } else if (address['county'] != null && address['county'].toString().isNotEmpty) {
-              locationName = address['county'].toString();
-            } else if (address['state'] != null && address['state'].toString().isNotEmpty) {
-              locationName = address['state'].toString();
-            } else if (displayName != null && displayName.toString().isNotEmpty) {
-              locationName = displayName.toString().split(',').first;
-            }
-
-            setState(() {
-              _locationName = locationName;
-              _isFetchingLocation = false;
-            });
-          } else {
-            setState(() {
-              _locationName = "Selected Location";
-              _isFetchingLocation = false;
-            });
-          }
-        } else {
-          setState(() {
-            _locationName = "Selected Location";
-            _isFetchingLocation = false;
-          });
-        }
-      } else {
-        setState(() {
-          _locationName = widget.alert.location;
-          _isFetchingLocation = false;
-        });
-      }
-    } catch (e) {
-      debugPrint("❌ Error getting location name: $e");
-      setState(() {
-        _locationName = "Selected Location";
-        _isFetchingLocation = false;
-      });
-    }
+  if (rawLocation.isEmpty) {
+    setState(() {
+      _locationName = "Location not available";
+      _isFetchingLocation = false;
+    });
+    return;
   }
 
+  // Agar already human-readable address hai to usi ko use karo
+  final parts = rawLocation.split(",");
+  if (parts.length != 2) {
+    setState(() {
+      _locationName = rawLocation;
+      _isFetchingLocation = false;
+    });
+    return;
+  }
+
+  final lat = parts[0].trim();
+  final lon = parts[1].trim();
+
+  // Validate coordinates
+  final latVal = double.tryParse(lat);
+  final lonVal = double.tryParse(lon);
+
+  if (latVal == null || lonVal == null) {
+    setState(() {
+      _locationName = rawLocation;
+      _isFetchingLocation = false;
+    });
+    return;
+  }
+
+  try {
+    final url = Uri.parse(
+      'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
+    );
+
+    final response = await http.get(
+      url,
+      headers: {'User-Agent': 'ChurppyApp/1.0'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final address = data['address'];
+      final displayName = (data['display_name'] ?? '').toString().trim();
+
+      String resolvedLocation = "";
+
+      if (address != null) {
+        if ((address['road'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['road'].toString().trim();
+        } else if ((address['neighbourhood'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['neighbourhood'].toString().trim();
+        } else if ((address['suburb'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['suburb'].toString().trim();
+        } else if ((address['city'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['city'].toString().trim();
+        } else if ((address['town'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['town'].toString().trim();
+        } else if ((address['village'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['village'].toString().trim();
+        } else if ((address['county'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['county'].toString().trim();
+        } else if ((address['state'] ?? '').toString().trim().isNotEmpty) {
+          resolvedLocation = address['state'].toString().trim();
+        }
+      }
+
+      // Agar address object se kuch na mila to display_name use karo
+      if (resolvedLocation.isEmpty && displayName.isNotEmpty) {
+        resolvedLocation = displayName;
+      }
+
+      // Agar display_name bhi na mile to raw coordinates string use karo
+      if (resolvedLocation.isEmpty) {
+        resolvedLocation = rawLocation;
+      }
+
+      setState(() {
+        _locationName = resolvedLocation;
+        _isFetchingLocation = false;
+      });
+
+      debugPrint("✅ Resolved location: $_locationName");
+    } else {
+      setState(() {
+        _locationName = rawLocation;
+        _isFetchingLocation = false;
+      });
+      debugPrint("⚠️ Reverse geocoding failed with status: ${response.statusCode}");
+    }
+  } catch (e) {
+    debugPrint("❌ Error getting location name: $e");
+    setState(() {
+      _locationName = rawLocation;
+      _isFetchingLocation = false;
+    });
+  }
+}
   Future<void> _playDing() async {
     try {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
@@ -401,7 +425,6 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // remain might be null (unlimited)
       final int? remainingInt = int.tryParse(remain?.toString() ?? "");
       final int? maxInt = int.tryParse(max?.toString() ?? "");
 
@@ -412,7 +435,6 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
       if (maxInt != null && maxInt > 0) {
         await prefs.setInt("trial_max_limit", maxInt);
 
-        // simple rule: if max==2 treat as trial
         if (maxInt == 2) {
           await prefs.setBool("is_trial", true);
           await prefs.setString("plan_type", "trial");
@@ -462,7 +484,7 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
       request.fields.addAll({
         'merchant_id': userId!,
         'title': titleToSave,
-        'description': widget.alert.description,
+        'description': _alertDescription,
         'location': widget.alert.location,
         'location_name': _locationName,
         'start_date': widget.alert.startDate,
@@ -532,11 +554,32 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     return false;
   }
 
+  void _goToPlansScreen() {
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ChurppyPlansScreen(
+          showTryFree: false,
+        ),
+      ),
+    );
+  }
+
   /// ✅ Send Alert API call
   Future<void> _sendAlert({required int status}) async {
     if (userId == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("User ID not found")));
+      return;
+    }
+
+    if (_isFetchingLocation) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please wait, location is still loading.")),
+      );
       return;
     }
 
@@ -551,7 +594,7 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
       request.fields.addAll({
         'merchant_id': userId!,
         'title': titleToSave,
-        'description': widget.alert.description,
+        'description': _alertDescription,
         'location': widget.alert.location,
         'location_name': _locationName,
         'start_date': widget.alert.startDate,
@@ -612,7 +655,6 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
             max: max,
           );
         } else {
-          // ❌ error cases
           final used = jsonData['used'];
           final max = jsonData['max_limit'];
           final lowerMsg = msg.toLowerCase();
@@ -626,10 +668,16 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
 
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(jsonData['message'] ?? "Trial force create failed. Please try again."),
+                content: Text(jsonData['message'] ?? "Alert limit reached. Please renew your plan."),
                 backgroundColor: Colors.red,
               ),
             );
+
+            Future.delayed(const Duration(milliseconds: 350), () {
+              _goToPlansScreen();
+            });
+
+            return;
           } else if (isPlanError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -725,7 +773,6 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
                 textAlign: TextAlign.center,
               ),
 
-              // ✅ show remaining only if both are numeric and max>0
               if (int.tryParse(max?.toString() ?? "") != null && int.parse(max.toString()) > 0)
                 Column(
                   children: [
@@ -1097,12 +1144,20 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
 
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 2),
-                              child: _styledButton("APPROVE", Colors.green, () => _sendAlert(status: 1)),
+                              child: _styledButton(
+                                "APPROVE",
+                                Colors.green,
+                                (_isFetchingLocation || _isLoading) ? null : () => _sendAlert(status: 1),
+                              ),
                             ),
                             const SizedBox(height: 12),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 6),
-                              child: _styledButton("SAVE FOR LATER", Colors.blue.shade700, () => _sendAlert(status: 0)),
+                              child: _styledButton(
+                                "SAVE FOR LATER",
+                                Colors.blue.shade700,
+                                (_isFetchingLocation || _isLoading) ? null : () => _sendAlert(status: 0),
+                              ),
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 120, vertical: 6),
@@ -1110,6 +1165,21 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
                                 Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactUsScreen()));
                               }),
                             ),
+
+                            if (_isFetchingLocation)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Center(
+                                  child: Text(
+                                    "Please wait, real location is loading...",
+                                    style: GoogleFonts.roboto(
+                                      fontSize: 12,
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
 
                             const SizedBox(height: 20),
 
@@ -1221,7 +1291,9 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
     );
   }
 
-  Widget _styledButton(String text, Color color, VoidCallback onTap) {
+  Widget _styledButton(String text, Color color, VoidCallback? onTap) {
+    final bool isDisabled = onTap == null;
+
     return SizedBox(
       width: double.infinity,
       height: 56,
@@ -1239,7 +1311,7 @@ class _ReviewChurppyScreenState extends State<ReviewChurppyScreen> {
             style: GoogleFonts.roboto(
               fontWeight: FontWeight.bold,
               fontSize: 16,
-              color: color,
+              color: isDisabled ? Colors.grey : color,
             ),
           ),
         ),

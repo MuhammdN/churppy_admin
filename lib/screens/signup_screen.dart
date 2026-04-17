@@ -9,7 +9,6 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geolocator/geolocator.dart';
 import '../routes.dart';
 
-
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -72,17 +71,20 @@ class _SignupScreenState extends State<SignupScreen> {
     if (permission == LocationPermission.deniedForever) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Location permissions are permanently denied')),
+          content: Text('Location permissions are permanently denied'),
+        ),
       );
       return;
     }
 
     final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
+      desiredAccuracy: LocationAccuracy.high,
+    );
     _currentPosition = pos;
 
     final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json');
+      'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json',
+    );
     final resp = await http.get(uri, headers: {
       'User-Agent': 'ChurppyAdmin/1.0 (admin@churppy.com)',
     });
@@ -94,7 +96,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
       setState(() {
         _currentCountryCode = countryCode;
-        businessAddressCtrl.text = data['display_name'] ?? '';
       });
     }
   }
@@ -104,9 +105,10 @@ class _SignupScreenState extends State<SignupScreen> {
     if (query.isEmpty || _currentCountryCode == null) return [];
 
     final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}'
-        '&countrycodes=${_currentCountryCode!.toLowerCase()}'
-        '&format=json&addressdetails=1&limit=6');
+      'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}'
+      '&countrycodes=${_currentCountryCode!.toLowerCase()}'
+      '&format=json&addressdetails=1&limit=6',
+    );
 
     final resp = await http.get(uri, headers: {
       'User-Agent': 'ChurppyAdmin/1.0 (admin@churppy.com)',
@@ -122,10 +124,14 @@ class _SignupScreenState extends State<SignupScreen> {
   // 📍 Set address to GPS location
   Future<void> useCurrentLocation() async {
     final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
     setState(() {
-      businessAddressCtrl.text = "${pos.latitude},${pos.longitude}";
+      businessAddressCtrl.text =
+          "${pos.latitude.toStringAsFixed(6)},${pos.longitude.toStringAsFixed(6)}";
     });
+
     _getUserLocationAndCountry();
   }
 
@@ -171,7 +177,8 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => isLoading = true);
 
     final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/send_admin_otp.php");
+      "https://churppy.eurekawebsolutions.com/api/send_admin_otp.php",
+    );
 
     final requestBody = {
       "firstname": firstNameCtrl.text.trim(),
@@ -264,24 +271,23 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     Expanded(
                       child: SingleChildScrollView(
-                        padding:
-                            const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.stretch,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _field("Business Name", businessNameCtrl,
-                                error: _errors['businessName']),
+                            _field(
+                              "Business Name",
+                              businessNameCtrl,
+                              error: _errors['businessName'],
+                            ),
 
                             // ===================== Address Field =====================
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
-                              child: TypeAheadField<
-                                  Map<String, dynamic>>(
+                              child: TypeAheadField<Map<String, dynamic>>(
                                 controller: businessAddressCtrl,
                                 suggestionsCallback: fetchSuggestions,
-                                builder:
-                                    (context, controller, focusNode) {
+                                builder: (context, controller, focusNode) {
                                   return TextField(
                                     controller: controller,
                                     focusNode: focusNode,
@@ -289,47 +295,37 @@ class _SignupScreenState extends State<SignupScreen> {
                                       hintText: 'Business Address',
                                       errorText: _errors['address'],
                                       suffixIcon: IconButton(
-                                        icon: const Icon(
-                                            Icons.my_location),
+                                        icon: const Icon(Icons.my_location),
                                         onPressed: useCurrentLocation,
                                       ),
                                       border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(6),
+                                        borderRadius: BorderRadius.circular(6),
                                       ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 12),
+                                        horizontal: 14,
+                                        vertical: 12,
+                                      ),
                                     ),
                                   );
                                 },
-                                itemBuilder:
-                                    (context, suggestion) {
-                                  final addr =
-                                      suggestion['address'] ?? {};
+                                itemBuilder: (context, suggestion) {
+                                  final addr = suggestion['address'] ?? {};
                                   final street = [
                                     addr['road'],
                                     addr['pedestrian'],
                                     addr['footway'],
                                     addr['residential']
-                                  ]
-                                      .where((e) => e != null)
-                                      .join(", ");
+                                  ].where((e) => e != null).join(", ");
 
                                   final locality = [
                                     addr['suburb'],
                                     addr['city'],
                                     addr['town'],
                                     addr['village']
-                                  ]
-                                      .where((e) => e != null)
-                                      .join(", ");
+                                  ].where((e) => e != null).join(", ");
 
-                                  final display = [
-                                    street,
-                                    locality
-                                  ]
+                                  final display = [street, locality]
                                       .where((e) => e.isNotEmpty)
                                       .join(", ");
 
@@ -337,111 +333,89 @@ class _SignupScreenState extends State<SignupScreen> {
                                     title: Text(
                                       display.isNotEmpty
                                           ? display
-                                          : suggestion[
-                                                  'display_name'] ??
-                                              '',
+                                          : suggestion['display_name'] ?? '',
                                     ),
                                   );
                                 },
-                                onSelected:
-                                    (suggestion) {
-                                  final addr =
-                                      suggestion['address'] ?? {};
-                                  final street = [
-                                    addr['road'],
-                                    addr['pedestrian'],
-                                    addr['footway'],
-                                    addr['residential']
-                                  ]
-                                      .where((e) => e != null)
-                                      .join(", ");
+                                onSelected: (suggestion) {
+                                  final lat = suggestion['lat'];
+                                  final lng = suggestion['lon'];
 
-                                  final locality = [
-                                    addr['suburb'],
-                                    addr['city'],
-                                    addr['town'],
-                                    addr['village']
-                                  ]
-                                      .where((e) => e != null)
-                                      .join(", ");
-
-                                  final display = [
-                                    street,
-                                    locality
-                                  ]
-                                      .where((e) => e.isNotEmpty)
-                                      .join(", ");
-
-                                  setState(() {
-                                    businessAddressCtrl.text =
-                                        display.isNotEmpty
-                                            ? display
-                                            : suggestion[
-                                                    'display_name'] ??
-                                                '';
-                                  });
+                                  if (lat != null && lng != null) {
+                                    setState(() {
+                                      businessAddressCtrl.text =
+                                          "${double.parse(lat.toString()).toStringAsFixed(6)},${double.parse(lng.toString()).toStringAsFixed(6)}";
+                                    });
+                                  }
                                 },
-                                emptyBuilder: (context) =>
-                                    const ListTile(
-                                      title:
-                                          Text('No results found'),
-                                    ),
+                                emptyBuilder: (context) => const ListTile(
+                                  title: Text('No results found'),
+                                ),
                               ),
                             ),
 
                             // ===================== Remaining Fields =====================
-                            _field("First Name", firstNameCtrl,
-                                error: _errors['firstName']),
-                            _field("Last Name", lastNameCtrl,
-                                error: _errors['lastName']),
-                            _field("Email", emailCtrl,
-                                error: _errors['email']),
-                            _field("Password", passwordCtrl,
-                                obscure: true,
-                                error: _errors['password']),
+                            _field(
+                              "First Name",
+                              firstNameCtrl,
+                              error: _errors['firstName'],
+                            ),
+                            _field(
+                              "Last Name",
+                              lastNameCtrl,
+                              error: _errors['lastName'],
+                            ),
+                            _field(
+                              "Email",
+                              emailCtrl,
+                              error: _errors['email'],
+                            ),
+                            _field(
+                              "Password",
+                              passwordCtrl,
+                              obscure: true,
+                              error: _errors['password'],
+                            ),
 
                             const Text(
                               'Enter your mobile number',
                               style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 8),
 
                             Row(
                               children: [
                                 InkWell(
-                                  onTap: () =>
-                                      _showCountryPicker(context),
+                                  onTap: () => _showCountryPicker(context),
                                   child: Container(
-                                    padding:
-                                        const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 12,
+                                    ),
                                     decoration: BoxDecoration(
                                       border: Border.all(
-                                          color: Color(0xFFBDBDBD)),
-                                      borderRadius:
-                                          BorderRadius.circular(6),
+                                        color: const Color(0xFFBDBDBD),
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Row(
                                       children: [
                                         Text(
-                                          selectedCountry
-                                                  ?.flagEmoji ??
-                                              '🌎',
-                                          style: const TextStyle(
-                                              fontSize: 20),
+                                          selectedCountry?.flagEmoji ?? '🌎',
+                                          style: const TextStyle(fontSize: 20),
                                         ),
                                         const SizedBox(width: 6),
                                         Text(
                                           '+${selectedCountry?.phoneCode ?? ''}',
-                                          style: const TextStyle(
-                                              fontSize: 14),
+                                          style: const TextStyle(fontSize: 14),
                                         ),
                                         const Icon(
-                                            Icons.arrow_drop_down,
-                                            size: 20),
+                                          Icons.arrow_drop_down,
+                                          size: 20,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -450,19 +424,18 @@ class _SignupScreenState extends State<SignupScreen> {
                                 Expanded(
                                   child: TextField(
                                     controller: phoneCtrl,
-                                    keyboardType:
-                                        TextInputType.phone,
+                                    keyboardType: TextInputType.phone,
                                     decoration: InputDecoration(
                                       hintText: 'Phone Number',
                                       errorText: _errors['phone'],
                                       border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(
-                                                  6)),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 12),
+                                        horizontal: 14,
+                                        vertical: 12,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -475,30 +448,25 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     // ===================== Continue Button =====================
                     Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.stretch,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           SizedBox(
                             height: 48,
                             child: FilledButton(
                               style: FilledButton.styleFrom(
-                                backgroundColor:
-                                    const Color(0xFF804692),
+                                backgroundColor: const Color(0xFF804692),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(8)),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
-                              onPressed:
-                                  isLoading ? null : _signup,
+                              onPressed: isLoading ? null : _signup,
                               child: isLoading
                                   ? const SizedBox(
                                       height: 22,
                                       width: 22,
-                                      child:
-                                          CircularProgressIndicator(
+                                      child: CircularProgressIndicator(
                                         color: Colors.white,
                                         strokeWidth: 2,
                                       ),
@@ -510,43 +478,35 @@ class _SignupScreenState extends State<SignupScreen> {
 
                           Row(
                             children: const [
-                              Expanded(
-                                  child: Divider(
-                                      color: Colors.grey)),
+                              Expanded(child: Divider(color: Colors.grey)),
                               Padding(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 8),
-                                child: Text('or',
-                                    style: TextStyle(
-                                        color: Colors.black54)),
+                                padding: EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  'or',
+                                  style: TextStyle(color: Colors.black54),
+                                ),
                               ),
-                              Expanded(
-                                  child: Divider(
-                                      color: Colors.grey)),
+                              Expanded(child: Divider(color: Colors.grey)),
                             ],
                           ),
                           const SizedBox(height: 10),
 
                           Center(
                             child: GestureDetector(
-                              onTap: () =>
-                                  Navigator.pushReplacementNamed(
-                                      context, Routes.login),
+                              onTap: () => Navigator.pushReplacementNamed(
+                                context,
+                                Routes.login,
+                              ),
                               child: const Text.rich(
                                 TextSpan(
-                                  text:
-                                      'If you already have an account, ',
-                                  style: TextStyle(
-                                      color: Colors.black87),
+                                  text: 'If you already have an account, ',
+                                  style: TextStyle(color: Colors.black87),
                                   children: [
                                     TextSpan(
                                       text: 'login.',
                                       style: TextStyle(
-                                        fontWeight:
-                                            FontWeight.w700,
-                                        decoration:
-                                            TextDecoration
-                                                .underline,
+                                        fontWeight: FontWeight.w700,
+                                        decoration: TextDecoration.underline,
                                       ),
                                     ),
                                   ],
@@ -568,14 +528,11 @@ class _SignupScreenState extends State<SignupScreen> {
               left: 10,
               bottom: 42,
               child: InkWell(
-                onTap: () =>
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => LoginScreen()),
-                    ),
-                borderRadius:
-                    BorderRadius.circular(100),
+                onTap: () => Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginScreen()),
+                ),
+                borderRadius: BorderRadius.circular(100),
                 child: Container(
                   width: 36,
                   height: 36,
@@ -583,8 +540,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     shape: BoxShape.circle,
                     color: Color(0xFFE0E0E0),
                   ),
-                  child:
-                      const Icon(Icons.arrow_back, size: 20),
+                  child: const Icon(Icons.arrow_back, size: 20),
                 ),
               ),
             ),
@@ -595,8 +551,12 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   // 🔶 Reusable field widget
-  Widget _field(String hint, TextEditingController ctrl,
-      {bool obscure = false, String? error}) {
+  Widget _field(
+    String hint,
+    TextEditingController ctrl, {
+    bool obscure = false,
+    String? error,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -605,10 +565,13 @@ class _SignupScreenState extends State<SignupScreen> {
         decoration: InputDecoration(
           hintText: hint,
           errorText: error,
-          border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+          ),
           contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14, vertical: 12),
+            horizontal: 14,
+            vertical: 12,
+          ),
         ),
       ),
     );

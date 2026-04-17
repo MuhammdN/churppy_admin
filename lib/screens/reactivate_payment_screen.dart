@@ -29,8 +29,6 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
   bool _paymentCompleted = false;
 
   String? userId;
-  String? profileImage;
-  bool profileLoading = true;
 
   final double churppyAmount = 16;
   final double pdfUploadAmount = 20;
@@ -45,33 +43,16 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
   Future<void> loadUser() async {
     final prefs = await SharedPreferences.getInstance();
     userId = prefs.getString("user_id");
-
-    if (userId != null) {
-      await fetchUserProfile();
+    if (mounted) {
+      setState(() {});
     }
-  }
-
-  Future<void> fetchUserProfile() async {
-    final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/user.php?id=$userId");
-
-    try {
-      final res = await http.get(url);
-      final data = jsonDecode(res.body);
-
-      if (data["status"] == "success") {
-        profileImage = data["data"]["image"];
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-    setState(() => profileLoading = false);
   }
 
   Future<String?> createPaymentIntent(double amount) async {
     try {
       final url = Uri.parse(
-          "https://churppy.eurekawebsolutions.com/api/create_payment_intent.php");
+        "https://churppy.eurekawebsolutions.com/api/create_payment_intent.php",
+      );
 
       final response = await http.post(
         url,
@@ -130,7 +111,7 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (_) => AlertsListScreen(userId: userId!),
+          builder: (_) => AlertsListScreen(userId: userId ?? ""),
         ),
         (route) => false,
       );
@@ -153,7 +134,8 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
 
   Future<void> updateAlertAfterPayment() async {
     final url = Uri.parse(
-        "https://churppy.eurekawebsolutions.com/api/update_alert_payment.php");
+      "https://churppy.eurekawebsolutions.com/api/update_alert_payment.php",
+    );
 
     final alert = widget.alertData;
 
@@ -190,126 +172,147 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const ChurppyDrawer(),
-
       body: SafeArea(
         child: Stack(
           children: [
-            Column(
-              children: [
-                // ⭐ HEADER
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 110),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Builder(
-                            builder: (ctx) => GestureDetector(
-                              onTap: () => Scaffold.of(ctx).openDrawer(),
-                              child: Image.asset(
-                                "assets/icons/menu.png",
-                                height: 40,
-                                width: 40,
+                      // HEADER
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Builder(
+                              builder: (ctx) => GestureDetector(
+                                onTap: () => Scaffold.of(ctx).openDrawer(),
+                                child: Image.asset(
+                                  "assets/icons/menu.png",
+                                  height: 40,
+                                  width: 40,
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Image.asset(
+                                  "assets/images/logo.png",
+                                  height: 40,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // PAYMENT TITLE
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            Image.asset(
+                              "assets/images/bell_churppy.png",
+                              height: 70,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "PAYMENT",
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      // PRICE DETAILS
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
-                          const SizedBox(width: 12),
-                          Image.asset("assets/images/logo.png",
-                              height: 40, fit: BoxFit.contain),
-                        ],
+                          child: Column(
+                            children: [
+                              priceItem(
+                                "Churppy Alert",
+                                "\$${churppyAmount.toString()}",
+                              ),
+                              priceItem(
+                                "PDF Upload",
+                                "\$${pdfUploadAmount.toString()}",
+                              ),
+                              priceItem(
+                                "Credit Card Fee",
+                                "\$${cardFee.toString()}",
+                              ),
+                              const Divider(),
+                              priceItem(
+                                "TOTAL:",
+                                "\$${total.toString()}",
+                                bold: true,
+                                big: true,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
 
-                      profileLoading
-                          ? const CircularProgressIndicator()
-                          : profileImage != null
-                              ? ClipOval(
-                                  child: Image.network(
-                                    profileImage!,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                              : const Icon(Icons.person, size: 40),
+                      const SizedBox(height: 25),
+
+                      // PAY BUTTON
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 60),
+                        child: isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : payButton(() => openPaymentSheet(total)),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // CONTACT US BUTTON
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 120),
+                        child: contactButton(() {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ContactUsScreen(),
+                            ),
+                          );
+                        }),
+                      ),
                     ],
                   ),
                 ),
-
-                // ⭐ PAYMENT TITLE
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      Image.asset("assets/images/bell_churppy.png", height: 70),
-                      const SizedBox(width: 10),
-                      Text(
-                        "PAYMENT",
-                        style: GoogleFonts.poppins(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 15),
-
-                // ⭐ PRICE DETAILS
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Column(
-                      children: [
-                        priceItem("Churppy Alert", "\$${churppyAmount.toString()}"),
-                        priceItem("PDF Upload", "\$${pdfUploadAmount.toString()}"),
-                        priceItem("Credit Card Fee", "\$${cardFee.toString()}"),
-                        const Divider(),
-                        priceItem(
-                          "TOTAL:",
-                          "\$${total.toString()}",
-                          bold: true,
-                          big: true,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 25),
-
-                // ⭐ PAY BUTTON
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 60),
-                  child: isLoading
-                      ? const CircularProgressIndicator()
-                      : payButton(() => openPaymentSheet(total)),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ⭐ CONTACT US BUTTON
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 120),
-                  child: contactButton(() {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ContactUsScreen()),
-                    );
-                  }),
-                ),
-              ],
+              ),
             ),
 
-            // ⭐ BOTTOM LEFT CIRCULAR BACK ARROW
+            // BOTTOM LEFT BACK BUTTON
             Positioned(
               bottom: 20,
               left: 20,
@@ -324,30 +327,42 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
                   child: const Icon(Icons.arrow_back, size: 26),
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget priceItem(String left, String right,
-      {bool bold = false, bool big = false}) {
+  Widget priceItem(
+    String left,
+    String right, {
+    bool bold = false,
+    bool big = false,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(left,
+          Expanded(
+            child: Text(
+              left,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.poppins(
                 fontSize: big ? 17 : 14,
                 fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-              )),
-          Text(right,
-              style: GoogleFonts.poppins(
-                fontSize: big ? 20 : 14,
-                fontWeight: bold ? FontWeight.bold : FontWeight.w600,
-              )),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            right,
+            style: GoogleFonts.poppins(
+              fontSize: big ? 20 : 14,
+              fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -355,16 +370,30 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
 
   Widget payButton(VoidCallback onTap) {
     return SizedBox(
+      width: double.infinity,
       height: 65,
       child: Card(
         elevation: 1.5,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: const Color(0xFFF1E7F4),
         child: TextButton(
           onPressed: onTap,
-          child: Text(
-            "Pay/Send Churppy Alert",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
+          style: TextButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              "Pay/Send Churppy Alert",
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: const Color(0xFF7A5AA6),
+              ),
             ),
           ),
         ),
@@ -374,17 +403,29 @@ class _AlertPaymentScreenState extends State<AlertPaymentScreen> {
 
   Widget contactButton(VoidCallback onTap) {
     return SizedBox(
+      width: double.infinity,
       height: 65,
       child: Card(
         color: Colors.red.shade50,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: TextButton(
           onPressed: onTap,
-          child: Text(
-            "Contact Us",
-            style: GoogleFonts.poppins(
-              color: Colors.red,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
+          style: TextButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              "Contact Us",
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
             ),
           ),
         ),

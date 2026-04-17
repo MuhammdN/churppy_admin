@@ -3,585 +3,14 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:churppy_admin/screens/dashboard_screen.dart';
 import 'package:churppy_admin/screens/profile.dart';
 import 'package:churppy_admin/screens/reactivate_payment_screen.dart';
+import 'package:churppy_admin/screens/reactivate_alert_screen.dart';
 import 'package:churppy_admin/screens/select_alert.dart';
-import 'package:churppy_admin/screens/churppy_alert_plan.dart'; // ✅ ADD: Plans screen for gating
+import 'package:churppy_admin/screens/churppy_alert_plan.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:geolocator/geolocator.dart';
 import 'drawer.dart';
-
-
-
-// 🔰 NEW: Address Autocomplete Field (From your API code)
-class AddressAutocompleteField extends StatefulWidget {
-  final TextEditingController controller;
-  const AddressAutocompleteField({super.key, required this.controller});
-
-  @override
-  State<AddressAutocompleteField> createState() =>
-      _AddressAutocompleteFieldState();
-}
-
-class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
-  String? _currentCountryCode;
-  Position? _currentPosition;
-
-  @override
-  void initState() {
-    super.initState();
-    _getUserLocationAndCountry();
-  }
-
-  Future<void> _getUserLocationAndCountry() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    }
-
-    final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-
-    setState(() => _currentPosition = pos);
-
-    // 👇 Reverse geocode to get country code
-    final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json');
-
-    final resp = await http.get(uri, headers: {
-      'User-Agent': 'ChurppyApp/1.0',
-    });
-
-    if (resp.statusCode == 200) {
-      final data = json.decode(resp.body);
-      final countryCode =
-          data['address']?['country_code']?.toString().toUpperCase();
-      setState(() {
-        _currentCountryCode = countryCode;
-        widget.controller.text = data['display_name'] ?? "";
-      });
-    }
-  }
-
-  /// ✅ Fetch address suggestions limited to current country
-  Future<List<Map<String, dynamic>>> fetchSuggestions(String query) async {
-    if (query.isEmpty || _currentCountryCode == null) return [];
-
-    final uri = Uri.parse('https://nominatim.openstreetmap.org/search'
-        '?q=${Uri.encodeComponent(query)}'
-        '&countrycodes=${_currentCountryCode!.toLowerCase()}'
-        '&format=json&addressdetails=1&limit=6');
-
-    final resp = await http.get(uri, headers: {
-      'User-Agent': 'ChurppyApp/1.0',
-    });
-
-    if (resp.statusCode == 200) {
-      final List data = json.decode(resp.body);
-      return data.cast<Map<String, dynamic>>();
-    } else {
-      return [];
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TypeAheadField<Map<String, dynamic>>(
-      controller: widget.controller,
-      builder: (context, controller, focusNode) {
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          decoration: InputDecoration(
-            hintText: "Search address...",
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.my_location),
-              onPressed: _getUserLocationAndCountry,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        );
-      },
-      suggestionsCallback: fetchSuggestions,
-      itemBuilder: (context, suggestion) {
-        final address = suggestion['address'] ?? {};
-        final sub = [
-          address['road'],
-          address['suburb'],
-          address['city'],
-          address['state']
-        ].where((e) => e != null).join(", ");
-        return ListTile(
-          title: Text(suggestion['display_name'] ?? ''),
-          subtitle: Text(sub.isNotEmpty ? sub : ''),
-        );
-      },
-      onSelected: (suggestion) {
-        widget.controller.text = suggestion['display_name'] ?? '';
-      },
-      emptyBuilder: (context) => const ListTile(
-        title: Text('No results found'),
-      ),
-    );
-  }
-}
-
-// 🔰 Reactivation Screen with Address Autocomplete
-class ReactivateAlertScreen extends StatefulWidget {
-  final Map<String, dynamic> alert;
-  final Function(String, String, String, String) onReactivate;
-
-  const ReactivateAlertScreen({
-    super.key,
-    required this.alert,
-    required this.onReactivate,
-  });
-
-  @override
-  State<ReactivateAlertScreen> createState() => _ReactivateAlertScreenState();
-}
-
-class _ReactivateAlertScreenState extends State<ReactivateAlertScreen> {
-  final TextEditingController _addressCtrl = TextEditingController();
-  final TextEditingController _firstDayCtrl = TextEditingController();
-  final TextEditingController _lastDayCtrl = TextEditingController();
-  final TextEditingController _timeStartCtrl = TextEditingController();
-  final TextEditingController _timeEndCtrl = TextEditingController();
-
-  bool _isLoading = false;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCurrentLocation();
-
-    final now = DateTime.now();
-    final tomorrow = now.add(const Duration(days: 1));
-
-    _firstDayCtrl.text =
-        "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    _lastDayCtrl.text =
-        "${tomorrow.year.toString().padLeft(4, '0')}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
-
-    _timeStartCtrl.text =
-        "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
-    _timeEndCtrl.text =
-        "${now.add(const Duration(hours: 2)).hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00";
-  }
-
-  Future<void> _loadCurrentLocation() async {
-    final location = widget.alert['location']?.toString() ?? '';
-    if (location.contains(',')) {
-      try {
-        final parts = location.split(',');
-        if (parts.length == 2) {
-          final lat = parts[0].trim();
-          final lon = parts[1].trim();
-
-          final url = Uri.parse(
-              'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1');
-
-          final response = await http.get(url, headers: {
-            'User-Agent': 'ChurppyApp/1.0',
-          });
-
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            final displayName = data['display_name']?.toString();
-            if (displayName != null && displayName.isNotEmpty) {
-              setState(() {
-                _addressCtrl.text = displayName;
-              });
-            } else {
-              _addressCtrl.text = location;
-            }
-          } else {
-            _addressCtrl.text = location;
-          }
-        } else {
-          _addressCtrl.text = location;
-        }
-      } catch (e) {
-        _addressCtrl.text = location;
-      }
-    } else {
-      _addressCtrl.text = location;
-    }
-  }
-
-  Future<void> _pickDate(TextEditingController controller) async {
-    DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      String formatted =
-          "${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
-      controller.text = formatted;
-    }
-  }
-
-  Future<void> _pickTime(TextEditingController controller) async {
-    TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (picked != null) {
-      final now = DateTime.now();
-      final dt =
-          DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-      String formatted =
-          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:00";
-      controller.text = formatted;
-    }
-  }
-
-  String? _validateDateTime() {
-    if (_firstDayCtrl.text.isEmpty ||
-        _lastDayCtrl.text.isEmpty ||
-        _timeStartCtrl.text.isEmpty ||
-        _timeEndCtrl.text.isEmpty) {
-      return null;
-    }
-
-    try {
-      final startDateTime =
-          DateTime.parse("${_firstDayCtrl.text} ${_timeStartCtrl.text}");
-      final endDateTime =
-          DateTime.parse("${_lastDayCtrl.text} ${_timeEndCtrl.text}");
-
-      final totalDuration = endDateTime.difference(startDateTime);
-
-      if (totalDuration.inMinutes < 10) {
-        return "⚠️ Minimum alert duration should be 10 minutes";
-      }
-
-      if (totalDuration.inHours > 72) {
-        return "⚠️ Maximum alert duration should be 72 hours (3 days)";
-      }
-
-      return null;
-    } catch (e) {
-      return "⚠️ Invalid date/time format";
-    }
-  }
-
-  void _handleReactivate() {
-    if (_addressCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Please enter a location")),
-      );
-      return;
-    }
-
-    final dateTimeError = _validateDateTime();
-    if (dateTimeError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(dateTimeError)),
-      );
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    widget.onReactivate(
-      _addressCtrl.text,
-      _firstDayCtrl.text,
-      _lastDayCtrl.text,
-      "${_timeStartCtrl.text} to ${_timeEndCtrl.text}",
-    );
-
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Image.asset('assets/images/logo.png', width: 100, height: 30),
-            const SizedBox(width: 10),
-          ],
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Image.asset("assets/images/bell_churppy.png", height: 70),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Reactivate Alert",
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          fontStyle: FontStyle.italic,
-                          color: Colors.purple.shade800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "Update Alert Details",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "Current Plan: Single Use",
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            Text(
-              "UPDATE LOCATION",
-              style: GoogleFonts.roboto(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 12),
-            AddressAutocompleteField(controller: _addressCtrl),
-            const SizedBox(height: 20),
-
-            Row(
-              children: [
-                Text(
-                  "UPDATE DATES",
-                  style: GoogleFonts.roboto(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Icon(Icons.calendar_today, size: 18, color: Colors.red),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _firstDayCtrl,
-                    readOnly: true,
-                    onTap: () => _pickDate(_firstDayCtrl),
-                    decoration: const InputDecoration(
-                      hintText: "START DATE",
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _lastDayCtrl,
-                    readOnly: true,
-                    onTap: () => _pickDate(_lastDayCtrl),
-                    decoration: const InputDecoration(
-                      hintText: "END DATE",
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-
-            Row(
-              children: [
-                Text(
-                  "UPDATE TIMES",
-                  style: GoogleFonts.roboto(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Icon(Icons.access_time, size: 18, color: Colors.red),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _timeStartCtrl,
-                    readOnly: true,
-                    onTap: () => _pickTime(_timeStartCtrl),
-                    decoration: const InputDecoration(
-                      hintText: "START TIME",
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _timeEndCtrl,
-                    readOnly: true,
-                    onTap: () => _pickTime(_timeEndCtrl),
-                    decoration: const InputDecoration(
-                      hintText: "END TIME",
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline,
-                        color: Colors.red.shade600, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: GoogleFonts.roboto(
-                          color: Colors.red.shade700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 30),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _handleReactivate,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF8DC63F),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 2,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : Text(
-                        "REACTIVATE ALERT",
-                        style: GoogleFonts.roboto(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  side: const BorderSide(color: Colors.grey),
-                ),
-                child: Text(
-                  "CANCEL",
-                  style: GoogleFonts.roboto(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class AlertsListScreen extends StatefulWidget {
   final String userId;
@@ -618,20 +47,19 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     _fetchUserAlerts();
   }
 
-  /// ✅ SAME LOGIC AS DASHBOARD SEND ALERT BUTTON (APPLIED EVERYWHERE)
   Future<bool> _checkPlanAndAllowAlert() async {
     final prefs = await SharedPreferences.getInstance();
 
     final isTrial = prefs.getBool("is_trial") ?? false;
     final freeLeft = prefs.getInt("trial_free_left") ?? (isTrial ? 2 : 0);
-
-    // If you use this flag anywhere else, keep it.
     final hasActivePlan = prefs.getBool("has_active_plan") ?? false;
 
     debugPrint(
-        "🔍 PlanCheck → isTrial=$isTrial freeLeft=$freeLeft hasActivePlan=$hasActivePlan");
+      "🔍 PlanCheck → isTrial=$isTrial freeLeft=$freeLeft hasActivePlan=$hasActivePlan",
+    );
 
     if (isTrial && freeLeft <= 0) {
+      if (!mounted) return false;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -642,6 +70,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     }
 
     if (!isTrial && !hasActivePlan) {
+      if (!mounted) return false;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -654,17 +83,172 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     return true;
   }
 
+  Future<bool> _hasActiveMerchantPackage({String? alertType}) async {
+    try {
+      final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/check_merchant_package.php",
+      );
+
+      final body = <String, String>{
+        "merchant_id": widget.userId,
+      };
+
+      if (alertType != null && alertType.trim().isNotEmpty) {
+        body["alert_type"] =
+            alertType.toLowerCase() == "custom" ? "custom" : "churppy";
+      }
+
+      final response = await http.post(url, body: body);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data["status"] == "success" &&
+            data["has_active_package"] == true) {
+          if (data["limit_info"] is Map) {
+            final limitInfo = data["limit_info"] as Map;
+            final canUse = limitInfo["can_use"];
+            if (canUse is bool) return canUse;
+          }
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint("❌ Package check error: $e");
+      return false;
+    }
+  }
+
+  Future<String?> _convertAddressToCoordinates(String input) async {
+    final value = input.trim();
+    if (value.isEmpty) return null;
+
+    final parts = value.split(',');
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0].trim());
+      final lng = double.tryParse(parts[1].trim());
+      if (lat != null && lng != null) {
+        return "${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}";
+      }
+    }
+
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(value)}'
+        '&format=json&limit=1',
+      );
+
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'ChurppyApp/1.0',
+      });
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        if (data.isNotEmpty) {
+          final lat = data[0]['lat']?.toString();
+          final lon = data[0]['lon']?.toString();
+
+          if (lat != null && lon != null) {
+            final latNum = double.tryParse(lat);
+            final lonNum = double.tryParse(lon);
+
+            if (latNum != null && lonNum != null) {
+              return "${latNum.toStringAsFixed(6)},${lonNum.toStringAsFixed(6)}";
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ Location convert error: $e");
+    }
+
+    return null;
+  }
+
+  Future<bool> _reactivateDirectly({
+    required String alertId,
+    required String location,
+    required String startDate,
+    required String endDate,
+    required String startTime,
+    required String endTime,
+    required String alertType,
+    String? radius,
+  }) async {
+    try {
+      final url = Uri.parse(
+        "https://churppy.eurekawebsolutions.com/api/reactivate_alert_direct.php",
+      );
+
+      final body = <String, String>{
+        "alert_id": alertId,
+        "merchant_id": widget.userId,
+        "location": location,
+        "start_date": startDate,
+        "expiry_date": endDate,
+        "start_time": startTime,
+        "end_time": endTime,
+      };
+
+      if (radius != null && radius.trim().isNotEmpty) {
+        body["radius"] = radius;
+      }
+
+      final response = await http.post(url, body: body);
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data["status"] == "success") {
+        await _fetchUserAlerts();
+        await _playDing();
+
+        final alertIndex =
+            _allAlerts.indexWhere((a) => a['id']?.toString() == alertId);
+        if (alertIndex != -1) {
+          _allAlerts[alertIndex]['location'] = location;
+          _allAlerts[alertIndex]['start_date'] = startDate;
+          _allAlerts[alertIndex]['expiry_date'] = endDate;
+          _allAlerts[alertIndex]['start_time'] = startTime;
+          _allAlerts[alertIndex]['end_time'] = endTime;
+          _allAlerts[alertIndex]['status'] = '1';
+          _allAlerts[alertIndex]['type'] = alertType;
+        }
+
+        return true;
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text(data["message"] ?? "Failed to reactivate alert"),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return false;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Failed to reactivate alert"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Future<void> _playDing() async {
     try {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
       await _audioPlayer.setVolume(1.0);
-
-      debugPrint("🔔 Trying to play: assets/sounds/1.wav");
-      await _audioPlayer.play(
-        AssetSource('sounds/1.wav'),
-      );
-
-      debugPrint("✅ Sound PLAYED");
+      await _audioPlayer.play(AssetSource('sounds/1.wav'));
     } catch (e) {
       debugPrint("❌ SOUND ERROR: $e");
     }
@@ -705,7 +289,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   Future<void> _fetchUserAlerts() async {
     try {
       final url = Uri.parse(
-          "https://churppy.eurekawebsolutions.com/api/user_alerts.php?user_id=${widget.userId}");
+        "https://churppy.eurekawebsolutions.com/api/user_alerts.php?user_id=${widget.userId}",
+      );
 
       final response = await http.get(url);
 
@@ -715,29 +300,37 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
           final List<dynamic> alerts = data['alerts'] ?? [];
           await _loadFavoritesToAlerts(alerts);
 
-          setState(() {
-            _allAlerts = alerts;
-            _applyFilter(_currentFilter);
-            _isLoading = false;
-            _error = false;
-          });
+          if (mounted) {
+            setState(() {
+              _allAlerts = alerts;
+              _applyFilter(_currentFilter);
+              _isLoading = false;
+              _error = false;
+            });
+          }
         } else {
+          if (mounted) {
+            setState(() {
+              _error = true;
+              _isLoading = false;
+            });
+          }
+        }
+      } else {
+        if (mounted) {
           setState(() {
             _error = true;
             _isLoading = false;
           });
         }
-      } else {
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _error = true;
           _isLoading = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _error = true;
-        _isLoading = false;
-      });
     }
   }
 
@@ -839,8 +432,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
               .toList();
           break;
         case 'favorites':
-          _filteredAlerts =
-              _allAlerts.where((a) => (a['is_favorite']?.toString() == '1')).toList();
+          _filteredAlerts = _allAlerts
+              .where((a) => (a['is_favorite']?.toString() == '1'))
+              .toList();
           break;
         default:
           _filteredAlerts = List.from(_allAlerts);
@@ -851,9 +445,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   bool _isAlertExpired(
       String startDate, String expiryDate, String startTime, String endTime) {
     try {
-      String cleanedStartTime = startTime.length == 5 ? "$startTime:00" : startTime;
       String cleanedEndTime = endTime.length == 5 ? "$endTime:00" : endTime;
-
       final endDateTime =
           DateTime.parse("${expiryDate.split(' ')[0]} $cleanedEndTime");
 
@@ -884,9 +476,11 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isCurrentlyFavorite
-              ? "❌ Removed from favorites"
-              : "✅ Added to favorites"),
+          content: Text(
+            isCurrentlyFavorite
+                ? "Removed from favorites"
+                : "Added to favorites",
+          ),
           backgroundColor:
               isCurrentlyFavorite ? Colors.orange : const Color(0xFF8DC63F),
           behavior: SnackBarBehavior.floating,
@@ -895,7 +489,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("❌ Failed to update favorite"),
+          content: Text("Failed to update favorite"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -914,7 +508,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
 
     try {
       final url = Uri.parse(
-          "https://churppy.eurekawebsolutions.com/api/activate_alert.php");
+        "https://churppy.eurekawebsolutions.com/api/activate_alert.php",
+      );
 
       final response = await http.post(url, body: {
         'alert_id': alertId,
@@ -928,7 +523,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
 
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("✅ Alert activated successfully!"),
+              content: Text("Alert activated successfully"),
               backgroundColor: Color(0xFF8DC63F),
               behavior: SnackBarBehavior.floating,
             ),
@@ -938,7 +533,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("❌ ${data['message']}"),
+              content: Text(data['message'] ?? "Failed to activate alert"),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -950,7 +545,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("❌ Failed to activate alert"),
+          content: Text("Failed to activate alert"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -963,13 +558,13 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
   }
 
   Future<void> _reactivateAlert(Map<String, dynamic> alert) async {
-    await Navigator.push(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ReactivateAlertScreen(
           alert: alert,
           onReactivate: (newLocation, startDate, endDate, timeRange) async {
-            await _processReactivationWithPayment(
+            return await _processReactivationWithPayment(
               alert,
               newLocation,
               startDate,
@@ -980,50 +575,139 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         ),
       ),
     );
+
+    if (result == true) {
+      await _fetchUserAlerts();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Alert reactivated successfully"),
+            backgroundColor: Color(0xFF8DC63F),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
-  Future<void> _processReactivationWithPayment(
+  Future<bool> _processReactivationWithPayment(
     Map<String, dynamic> alert,
     String newLocation,
     String startDate,
     String endDate,
     String timeRange,
   ) async {
-    final times = timeRange.split(' to ');
-    final startTime = times.isNotEmpty ? times[0] : '00:00:00';
-    final endTime = times.length > 1 ? times[1] : '23:59:59';
+    final alertId = alert['id']?.toString() ?? '';
+    if (alertId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Invalid alert id"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return false;
+    }
 
-    final alertData = {
-      'id': alert['id']?.toString() ?? '',
-      'merchant_id': widget.userId,
-      'location': newLocation,
-      'start_date': startDate,
-      'expiry_date': endDate,
-      'start_time': startTime,
-      'end_time': endTime,
-      'alert_type': alert['type']?.toString() ?? 'churppy',
-      'title': alert['title']?.toString() ?? '',
-      'description': alert['description']?.toString() ?? '',
-    };
+    if (_reactivatingAlerts[alertId] == true) return false;
 
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AlertPaymentScreen(
-          alertData: alertData,
-          onPaymentSuccess: () async {
-            await _fetchUserAlerts();
-            await _playDing();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("✅ Alert reactivated successfully!"),
-                backgroundColor: Color(0xFF8DC63F),
-              ),
-            );
-          },
+    setState(() {
+      _reactivatingAlerts[alertId] = true;
+    });
+
+    try {
+      final times = timeRange.split(' to ');
+      final startTime = times.isNotEmpty ? times[0] : '00:00:00';
+      final endTime = times.length > 1 ? times[1] : '23:59:59';
+
+      final coordinateLocation =
+          await _convertAddressToCoordinates(newLocation.trim());
+
+      if (coordinateLocation == null || coordinateLocation.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Valid location convert nahi ho saki"),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return false;
+      }
+
+      final alertType = alert['type']?.toString() ?? 'churppy';
+      final radius = alert['alert_radius']?.toString() ??
+          alert['radius']?.toString() ??
+          '';
+
+      final alertData = {
+        'id': alertId,
+        'merchant_id': widget.userId,
+        'location': coordinateLocation,
+        'start_date': startDate,
+        'expiry_date': endDate,
+        'start_time': startTime,
+        'end_time': endTime,
+        'alert_type': alertType,
+        'title': alert['title']?.toString() ?? '',
+        'description': alert['description']?.toString() ?? '',
+        'radius': radius,
+      };
+
+      final hasActivePackage =
+          await _hasActiveMerchantPackage(alertType: alertType);
+
+      if (hasActivePackage == true) {
+        return await _reactivateDirectly(
+          alertId: alertData['id']!,
+          location: alertData['location']!,
+          startDate: alertData['start_date']!,
+          endDate: alertData['expiry_date']!,
+          startTime: alertData['start_time']!,
+          endTime: alertData['end_time']!,
+          alertType: alertData['alert_type']!,
+          radius: alertData['radius'],
+        );
+      }
+
+      if (!mounted) return false;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AlertPaymentScreen(
+            alertData: alertData,
+            onPaymentSuccess: () async {
+              await _fetchUserAlerts();
+              await _playDing();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Alert reactivated successfully"),
+                    backgroundColor: Color(0xFF8DC63F),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
         ),
-      ),
-    );
+      );
+
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reactivatingAlerts.remove(alertId);
+        });
+      } else {
+        _reactivatingAlerts.remove(alertId);
+      }
+    }
   }
 
   Future<String> _getLocationName(String coordinates) async {
@@ -1039,7 +723,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
           final lon = parts[1].trim();
 
           final url = Uri.parse(
-              'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1');
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
+          );
 
           final response = await http.get(url, headers: {
             'User-Agent': 'ChurppyApp/1.0',
@@ -1053,8 +738,11 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
             }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        debugPrint("❌ Reverse geocode error: $e");
+      }
     }
+
     return coordinates;
   }
 
@@ -1088,6 +776,12 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
       default:
         return 'UNKNOWN';
     }
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
   }
 
   @override
@@ -1135,7 +829,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                      builder: (_) => const ProfileScreen()),
+                                    builder: (_) => const ProfileScreen(),
+                                  ),
                                 );
                               },
                               child: profileImage != null
@@ -1147,18 +842,23 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                                         height: 50,
                                         fit: BoxFit.cover,
                                         errorBuilder: (c, o, s) {
-                                          return const Icon(Icons.person,
-                                              size: 70, color: Colors.grey);
+                                          return const Icon(
+                                            Icons.person,
+                                            size: 70,
+                                            color: Colors.grey,
+                                          );
                                         },
                                       ),
                                     )
-                                  : const Icon(Icons.person,
-                                      size: 70, color: Colors.grey),
+                                  : const Icon(
+                                      Icons.person,
+                                      size: 70,
+                                      color: Colors.grey,
+                                    ),
                             ),
                     ],
                   ),
                 ),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
@@ -1167,8 +867,11 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         radius: 20,
                         backgroundColor: Colors.grey.shade300,
                         child: IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              size: 20, color: Colors.black),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            size: 20,
+                            color: Colors.black,
+                          ),
                           onPressed: () {
                             Navigator.push(
                               context,
@@ -1190,12 +893,16 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                           fontStyle: FontStyle.italic,
                         ),
                       ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _isLoading ? null : _fetchUserAlerts,
+                        icon: const Icon(Icons.refresh, color: Color(0xFF804692)),
+                        tooltip: 'Refresh Alerts',
+                      ),
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
@@ -1227,92 +934,106 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _filterItem('Total', _allAlerts.length.toString(),
-                                'all', Icons.list_alt),
                             _filterItem(
-                                'Active',
-                                _allAlerts
-                                    .where((a) =>
-                                        (a['status']?.toString() ?? '0') == '1')
-                                    .length
-                                    .toString(),
-                                'active',
-                                Icons.check_circle),
+                              'Total',
+                              _allAlerts.length.toString(),
+                              'all',
+                              Icons.list_alt,
+                            ),
                             _filterItem(
-                                'Pending',
-                                _allAlerts
-                                    .where((a) =>
-                                        (a['status']?.toString() ?? '0') == '0')
-                                    .length
-                                    .toString(),
-                                'pending',
-                                Icons.schedule),
+                              'Active',
+                              _allAlerts
+                                  .where((a) =>
+                                      (a['status']?.toString() ?? '0') == '1')
+                                  .length
+                                  .toString(),
+                              'active',
+                              Icons.check_circle,
+                            ),
                             _filterItem(
-                                'Expired',
-                                _allAlerts
-                                    .where((a) =>
-                                        (a['status']?.toString() ?? '0') == '2')
-                                    .length
-                                    .toString(),
-                                'expired',
-                                Icons.cancel),
+                              'Pending',
+                              _allAlerts
+                                  .where((a) =>
+                                      (a['status']?.toString() ?? '0') == '0')
+                                  .length
+                                  .toString(),
+                              'pending',
+                              Icons.schedule,
+                            ),
                             _filterItem(
-                                'Favorites',
-                                _allAlerts
-                                    .where((a) =>
-                                        (a['is_favorite']?.toString() == '1'))
-                                    .length
-                                    .toString(),
-                                'favorites',
-                                Icons.favorite),
+                              'Expired',
+                              _allAlerts
+                                  .where((a) =>
+                                      (a['status']?.toString() ?? '0') == '2')
+                                  .length
+                                  .toString(),
+                              'expired',
+                              Icons.cancel,
+                            ),
+                            _filterItem(
+                              'Favorites',
+                              _allAlerts
+                                  .where((a) =>
+                                      (a['is_favorite']?.toString() == '1'))
+                                  .length
+                                  .toString(),
+                              'favorites',
+                              Icons.favorite,
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 if (_currentFilter != 'all')
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: _getFilterColor(_currentFilter).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: _getFilterColor(_currentFilter)
-                                .withOpacity(0.3)),
+                          color:
+                              _getFilterColor(_currentFilter).withOpacity(0.3),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(_getFilterIcon(_currentFilter),
-                              size: 16, color: _getFilterColor(_currentFilter)),
+                          Icon(
+                            _getFilterIcon(_currentFilter),
+                            size: 16,
+                            color: _getFilterColor(_currentFilter),
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             "Showing ${_currentFilter.toUpperCase()} alerts (${_filteredAlerts.length})",
                             style: GoogleFonts.roboto(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _getFilterColor(_currentFilter)),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _getFilterColor(_currentFilter),
+                            ),
                           ),
                           const Spacer(),
                           GestureDetector(
                             onTap: () => _applyFilter('all'),
-                            child: Icon(Icons.close,
-                                size: 16, color: _getFilterColor(_currentFilter)),
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: _getFilterColor(_currentFilter),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
-
                 const SizedBox(height: 16),
-
                 Expanded(
                   child: _isLoading
                       ? _buildLoadingState()
@@ -1322,7 +1043,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                               ? _buildEmptyState()
                               : _buildAlertsList(),
                 ),
-
                 const SizedBox(height: 20),
               ],
             ),
@@ -1344,30 +1064,38 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
           color: isSelected ? color.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: isSelected ? color : Colors.transparent,
-              width: isSelected ? 1.5 : 0),
+            color: isSelected ? color : Colors.transparent,
+            width: isSelected ? 1.5 : 0,
+          ),
         ),
         child: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                  color: color.withOpacity(0.1), shape: BoxShape.circle),
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, size: 16, color: color),
             ),
             const SizedBox(height: 4),
-            Text(count,
-                style: GoogleFonts.roboto(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: color)),
+            Text(
+              count,
+              style: GoogleFonts.roboto(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
             const SizedBox(height: 2),
-            Text(title,
-                style: GoogleFonts.roboto(
-                    fontSize: 10,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.w500,
-                    color: isSelected ? color : Colors.black54)),
+            Text(
+              title,
+              style: GoogleFonts.roboto(
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? color : Colors.black54,
+              ),
+            ),
           ],
         ),
       ),
@@ -1410,10 +1138,13 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8DC63F))),
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8DC63F)),
+          ),
           const SizedBox(height: 16),
-          Text("Loading your alerts...",
-              style: GoogleFonts.roboto(fontSize: 16, color: Colors.black54)),
+          Text(
+            "Loading your alerts...",
+            style: GoogleFonts.roboto(fontSize: 16, color: Colors.black54),
+          ),
         ],
       ),
     );
@@ -1426,15 +1157,20 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         children: [
           Icon(Icons.error_outline, size: 60, color: Colors.red.shade300),
           const SizedBox(height: 16),
-          Text("Failed to load alerts",
-              style: GoogleFonts.roboto(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54)),
+          Text(
+            "Failed to load alerts",
+            style: GoogleFonts.roboto(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black54,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text("Please check your connection and try again",
-              style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey),
-              textAlign: TextAlign.center),
+          Text(
+            "Please check your connection and try again",
+            style: GoogleFonts.roboto(fontSize: 14, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _fetchUserAlerts,
@@ -1442,33 +1178,42 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
               backgroundColor: const Color(0xFF8DC63F),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-            child: const Text("Try Again",
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            child: const Text(
+              "Try Again",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// ✅ UPDATED: Empty State Create Alert → now gated same as dashboard
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset('assets/images/bell_churppy.png', height: 100, width: 100),
+          Image.asset(
+            'assets/images/bell_churppy.png',
+            height: 100,
+            width: 100,
+          ),
           const SizedBox(height: 24),
           Text(
             _currentFilter == 'all'
                 ? "No Alerts Found"
                 : "No ${_currentFilter.toUpperCase()} Alerts",
             style: GoogleFonts.roboto(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black54),
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black54,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -1486,17 +1231,25 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
 
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => SelectAlertScreen()),
+                MaterialPageRoute(
+                  builder: (context) => SelectAlertScreen(),
+                ),
               );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF8DC63F),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-            child: const Text("Create Alert",
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            child: const Text(
+              "Create Alert",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -1526,7 +1279,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     final isFavorite = alert['is_favorite']?.toString() == '1';
 
     final timeLeft = _getTimeLeftDisplay(alert);
-
     final statusColor = _getStatusColor(status);
     final isPending = status == '0';
     final isExpired = status == '2';
@@ -1554,7 +1306,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.08),
                   borderRadius: const BorderRadius.only(
@@ -1571,7 +1324,10 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: statusColor.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -1611,7 +1367,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.pink),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.pink),
                         ),
                       )
                     else
@@ -1631,7 +1388,9 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                             ),
                           ),
                           child: Icon(
-                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            isFavorite
+                                ? Icons.favorite
+                                : Icons.favorite_border,
                             size: 18,
                             color: isFavorite ? Colors.pink : Colors.grey,
                           ),
@@ -1649,7 +1408,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                   ],
                 ),
               ),
-
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -1706,9 +1464,7 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 16),
-
                     Container(
                       height: 1,
                       decoration: BoxDecoration(
@@ -1721,18 +1477,14 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 16),
-
                     _detailRow(
                       Icons.location_on_outlined,
                       "Location",
                       displayLocation,
                       Colors.blue.shade600,
                     ),
-
                     const SizedBox(height: 12),
-
                     if (timeLeft.isNotEmpty &&
                         timeLeft != 'Not set' &&
                         !isPending)
@@ -1742,10 +1494,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                         timeLeft,
                         isExpired ? Colors.red : const Color(0xFF8DC63F),
                       ),
-
                     if (isPending || isExpired) ...[
                       const SizedBox(height: 20),
-
                       if (isPending)
                         _buildActionButton(
                           "ACTIVATE ALERT",
@@ -1758,7 +1508,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                             _activateAlert(alertId);
                           },
                         ),
-
                       if (isExpired)
                         _buildActionButton(
                           "REACTIVATE ALERT",
@@ -1766,8 +1515,6 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                           const Color(0xFF8DC63F),
                           _reactivatingAlerts[alertId] == true,
                           () async {
-                            final allowed = await _checkPlanAndAllowAlert();
-                            if (!allowed) return;
                             _reactivateAlert(alert);
                           },
                         ),
@@ -1782,8 +1529,13 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
     );
   }
 
-  Widget _buildActionButton(String text, IconData icon, Color color, bool isLoading,
-      VoidCallback onTap) {
+  Widget _buildActionButton(
+    String text,
+    IconData icon,
+    Color color,
+    bool isLoading,
+    VoidCallback onTap,
+  ) {
     return Container(
       width: double.infinity,
       height: 44,
@@ -1814,7 +1566,8 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
               else
@@ -1854,8 +1607,10 @@ class _AlertsListScreenState extends State<AlertsListScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(6),
-            decoration:
-                BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
             child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: 12),
